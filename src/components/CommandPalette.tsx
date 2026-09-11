@@ -15,6 +15,7 @@ import {
   Hash,
   Ruler,
   Layers,
+  Save,
   X,
 } from 'lucide-react';
 import { ToolType } from '../types';
@@ -30,6 +31,7 @@ interface CommandPaletteProps {
   onOpenCalibrate: () => void;
   onOpenAi: () => void;
   onExport: () => void;
+  onSave?: () => void;
 }
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({
@@ -42,6 +44,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onOpenCalibrate,
   onOpenAi,
   onExport,
+  onSave,
 }) => {
   const [query, setQuery] = useState('');
 
@@ -62,6 +65,20 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   if (!isOpen) return null;
 
   const actions = [
+    ...(onSave
+      ? [
+          {
+            id: 'save-source',
+            title: 'Save PDF Project at Source Location (Ctrl+S)',
+            category: 'File & Project',
+            icon: <Save className="w-4 h-4 text-emerald-400" />,
+            action: () => {
+              onSave();
+              onClose();
+            },
+          },
+        ]
+      : []),
     {
       id: 'compare',
       title: 'Compare Revisions (Diff & Overlay)',

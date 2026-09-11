@@ -52,6 +52,13 @@ import { ALL_SAMPLE_DRAWINGS, SampleDrawing } from './services/sampleDrawings';
 import { downloadFile } from './services/exportService';
 import { exportPdfDocument } from './services/pdfExportService';
 import { resolveStampVariables } from './services/stampService';
+import {
+  isFileSystemAccessSupported,
+  pickPdfWithNativeHandle,
+  writeBlobToSourceFileHandle,
+  saveBlobWithSaveFilePicker,
+  triggerBrowserDownload,
+} from './services/fileSystemSyncService';
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
 
 interface ToastMessage {
@@ -333,8 +340,15 @@ export default function App() {
 
   // PDF import modal & processing state
   const [pendingPdfFile, setPendingPdfFile] = useState<File | null>(null);
+  const [pendingFileHandle, setPendingFileHandle] = useState<FileSystemFileHandle | null>(null);
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
   const [pdfProgressText, setPdfProgressText] = useState('');
+
+  // Source File Handle for Native In-Place Disk Overwrite
+  const [sourceFileHandle, setSourceFileHandle] = useState<FileSystemFileHandle | null>(null);
+  const [sourceFileName, setSourceFileName] = useState<string>('Sample_BIM_Project.pdf');
+  const [isSavingToSource, setIsSavingToSource] = useState<boolean>(false);
+  const [, setLastSavedTime] = useState<string | null>(null);
 
   // Active current drawing object
   const currentDrawingIndex = sheets.findIndex((s) => s.id === currentSheetId);
@@ -520,15 +534,20 @@ export default function App() {
   };
 
   // Handle PDF & Drawing Upload with Choice Prompt
-  const handleRequestOpenPdf = (file: File) => {
+  const handleRequestOpenPdf = (file: File, handle?: FileSystemFileHandle) => {
     if (sheets && sheets.length > 0) {
       setPendingPdfFile(file);
+      setPendingFileHandle(handle || null);
     } else {
-      handleProcessPdfFile(file, 'replace');
+      handleProcessPdfFile(file, 'replace', handle);
     }
   };
 
-  const handleProcessPdfFile = async (file: File, mode: 'replace' | 'append') => {
+  const handleProcessPdfFile = async (
+    file: File,
+    mode: 'replace' | 'append',
+    handle?: FileSystemFileHandle
+  ) => {
     setIsProcessingPdf(true);
     setPdfProgressText('Reading file & rendering vector drawing pages...');
     try {
@@ -544,13 +563,21 @@ export default function App() {
       if (mode === 'replace') {
         setSheets(newSheets);
         setCurrentSheetId(newSheets[0].id);
+        setSourceFileHandle(handle || null);
+        setSourceFileName(file.name);
         addToast(
           'PDF Opened',
-          `Loaded ${newSheets.length} sheet${newSheets.length === 1 ? '' : 's'} from "${file.name}". Previous drawings replaced.`
+          handle
+            ? `Loaded ${newSheets.length} sheet${newSheets.length === 1 ? '' : 's'} from "${file.name}". Direct disk saving enabled.`
+            : `Loaded ${newSheets.length} sheet${newSheets.length === 1 ? '' : 's'} from "${file.name}". Previous drawings replaced.`
         );
       } else {
         setSheets((prev) => [...prev, ...newSheets]);
         setCurrentSheetId(newSheets[0].id);
+        if (!sourceFileHandle && handle) {
+          setSourceFileHandle(handle);
+          setSourceFileName(file.name);
+        }
         addToast(
           'Sheets Added',
           `Added ${newSheets.length} sheet${newSheets.length === 1 ? '' : 's'} from "${file.name}" to workspace.`
@@ -562,6 +589,24 @@ export default function App() {
     } finally {
       setIsProcessingPdf(false);
       setPendingPdfFile(null);
+      setPendingFileHandle(null);
+    }
+  };
+
+  const handleOpenWithNativePicker = async () => {
+    const result = await pickPdfWithNativeHandle();
+    if (result) {
+      handleRequestOpenPdf(result.file, result.handle);
+    } else if (!isFileSystemAccessSupported()) {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.pdf,image/png,image/jpeg,image/webp,image/svg+xml';
+      input.onchange = (e: any) => {
+        if (e.target.files && e.target.files[0]) {
+          handleRequestOpenPdf(e.target.files[0]);
+        }
+      };
+      input.click();
     }
   };
 
@@ -580,12 +625,22 @@ export default function App() {
   const handleClearAllSheets = () => {
     setSheets([]);
     setCurrentSheetId('');
+    setMarkups([]);
+    setUndoStack([]);
+    setRedoStack([]);
+    setSourceFileHandle(null);
+    setSourceFileName('');
     addToast('Workspace Cleared', 'All drawing sheets removed. Workspace is ready for a new document.');
   };
 
   const handleRestoreSamples = () => {
     setSheets(ALL_SAMPLE_DRAWINGS);
     setCurrentSheetId(ALL_SAMPLE_DRAWINGS[0].id);
+    setMarkups(INITIAL_MARKUPS);
+    setUndoStack([]);
+    setRedoStack([]);
+    setSourceFileHandle(null);
+    setSourceFileName('Sample_BIM_Project.pdf');
     addToast('Sample BIM Project Loaded', 'Restored 5 architectural and engineering sample sheets.');
   };
 
@@ -859,6 +914,104 @@ export default function App() {
     }
   };
 
+  // Save PDF Directly back to Source Location where opened from
+  const handleSaveToSourceLocation = async (forceSaveAs = false) => {
+    if (!sheets || sheets.length === 0) {
+      addToast('No Project to Save', 'Please open a drawing or PDF before saving.', 'warning');
+      return;
+    }
+
+    setIsSavingToSource(true);
+    try {
+      addToast(
+        'Rendering PDF Project',
+        'Compiling sheets, vector markups, takeoff layers, and dimensions...',
+        'info'
+      );
+
+      // Render full document with all sheets & markups
+      const pdfBlob = await exportPdfDocument({
+        sheets: sheets,
+        markups: markups,
+        mode: 'edited',
+        countCategories: countCategories,
+      });
+
+      const cleanBaseName = (
+        sourceFileName ||
+        currentDrawing?.sheetInfo.projectName ||
+        currentDrawing?.sheetInfo.title ||
+        'BIM_Drawing_Project'
+      ).replace(/(\.pdf)+$/i, '');
+      const suggestedFileName = `${cleanBaseName}.pdf`;
+
+      // 1. If we have an active FileSystemFileHandle and this is not a forced "Save As", write directly to it!
+      if (sourceFileHandle && !forceSaveAs) {
+        try {
+          await writeBlobToSourceFileHandle(sourceFileHandle, pdfBlob);
+          setAutosaveStatus('saved');
+          const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          setLastSavedTime(timeStr);
+          addToast(
+            'Saved to Original Location',
+            `Successfully overwritten "${sourceFileName || sourceFileHandle.name}" on disk at its original location (${timeStr}).`,
+            'success'
+          );
+          return;
+        } catch (handleWriteErr: any) {
+          console.warn('Direct file handle write was denied or expired:', handleWriteErr);
+          addToast(
+            'Disk Write Confirmation',
+            'Please select the destination file to re-authorize saving to disk.',
+            'info'
+          );
+        }
+      }
+
+      // 2. If File System Access API is supported, prompt native Save File Picker
+      if (isFileSystemAccessSupported()) {
+        try {
+          const newHandle = await saveBlobWithSaveFilePicker(suggestedFileName, pdfBlob);
+          setSourceFileHandle(newHandle);
+          setSourceFileName(newHandle.name);
+          setAutosaveStatus('saved');
+          const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          setLastSavedTime(timeStr);
+          addToast(
+            'File Saved & Linked',
+            `Saved to "${newHandle.name}". Future clicks on "Save PDF" will overwrite this file directly.`,
+            'success'
+          );
+          return;
+        } catch (pickerErr: any) {
+          if (pickerErr?.name === 'AbortError') {
+            addToast('Save Cancelled', 'File was not saved.', 'info');
+            return;
+          }
+          console.warn('Native save file picker failed, falling back to download:', pickerErr);
+        }
+      }
+
+      // 3. Standard browser download fallback
+      triggerBrowserDownload(pdfBlob, suggestedFileName);
+      setAutosaveStatus('saved');
+      setSourceFileName(suggestedFileName);
+      addToast(
+        'PDF Project Saved',
+        `Downloaded "${suggestedFileName}". (Browser does not permit direct in-place disk overwrite).`,
+        'success'
+      );
+    } catch (err: any) {
+      console.error('Save to source error:', err);
+      addToast('Save Failed', err?.message || 'Could not save PDF project to source location.', 'warning');
+    } finally {
+      setIsSavingToSource(false);
+    }
+  };
+
+  const saveToSourceRef = useRef(handleSaveToSourceLocation);
+  saveToSourceRef.current = handleSaveToSourceLocation;
+
   // 15. Export with various types
   const handleExportPdf = async (
     type: 'edited' | 'original' | 'flattened' | 'all_sheets' | 'json' | 'report' = 'edited'
@@ -919,6 +1072,13 @@ export default function App() {
         document.activeElement?.tagName === 'INPUT' ||
         document.activeElement?.tagName === 'TEXTAREA'
       ) {
+        return;
+      }
+
+      // Ctrl+S / Cmd+S: Save PDF to original source location
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        saveToSourceRef.current(false);
         return;
       }
 
@@ -1008,6 +1168,10 @@ export default function App() {
         onExportPdf={handleExportPdf}
         onPrint={handlePrint}
         scaleString={currentCalibration.scaleRatioString}
+        onSaveToSource={handleSaveToSourceLocation}
+        isSavingToSource={isSavingToSource}
+        hasSourceHandle={Boolean(sourceFileHandle)}
+        sourceFileName={sourceFileName}
       />
 
       {/* 2. Dynamic Mode Toolbar */}
@@ -1096,17 +1260,7 @@ export default function App() {
           onRotateSheet={handleRotatePage}
           onRemoveSheet={handleRemoveSheet}
           onClearAllSheets={handleClearAllSheets}
-          onOpenPdfPrompt={() => {
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.accept = '.pdf,image/png,image/jpeg,image/webp,image/svg+xml';
-            input.onchange = (e: any) => {
-              if (e.target.files && e.target.files[0]) {
-                handleRequestOpenPdf(e.target.files[0]);
-              }
-            };
-            input.click();
-          }}
+          onOpenPdfPrompt={handleOpenWithNativePicker}
           onReloadSamples={handleRestoreSamples}
         />
 
@@ -1222,6 +1376,7 @@ export default function App() {
         onOpenCalibrate={() => setIsCalibrateOpen(true)}
         onOpenAi={() => setIsRightSidebarOpen(true)}
         onExport={handleExportPdf}
+        onSave={() => handleSaveToSourceLocation(false)}
       />
 
       {/* Custom Stamps Modal */}
@@ -1390,13 +1545,16 @@ export default function App() {
         isProcessing={isProcessingPdf}
         progressText={pdfProgressText}
         onClose={() => {
-          if (!isProcessingPdf) setPendingPdfFile(null);
+          if (!isProcessingPdf) {
+            setPendingPdfFile(null);
+            setPendingFileHandle(null);
+          }
         }}
         onConfirmReplace={() => {
-          if (pendingPdfFile) handleProcessPdfFile(pendingPdfFile, 'replace');
+          if (pendingPdfFile) handleProcessPdfFile(pendingPdfFile, 'replace', pendingFileHandle || undefined);
         }}
         onConfirmAppend={() => {
-          if (pendingPdfFile) handleProcessPdfFile(pendingPdfFile, 'append');
+          if (pendingPdfFile) handleProcessPdfFile(pendingPdfFile, 'append', pendingFileHandle || undefined);
         }}
       />
     </div>

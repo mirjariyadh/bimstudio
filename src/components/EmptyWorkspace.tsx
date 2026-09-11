@@ -16,9 +16,10 @@ import {
   Sparkles,
   ArrowRight,
 } from 'lucide-react';
+import { pickPdfWithNativeHandle } from '../services/fileSystemSyncService';
 
 interface EmptyWorkspaceProps {
-  onOpenPdf: (file: File) => void;
+  onOpenPdf: (file: File, handle?: FileSystemFileHandle) => void;
   onRestoreSamples: () => void;
 }
 
@@ -28,6 +29,15 @@ export const EmptyWorkspace: React.FC<EmptyWorkspaceProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+
+  const handleOpenClick = async () => {
+    const result = await pickPdfWithNativeHandle();
+    if (result) {
+      onOpenPdf(result.file, result.handle);
+    } else {
+      fileInputRef.current?.click();
+    }
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -48,12 +58,28 @@ export const EmptyWorkspace: React.FC<EmptyWorkspaceProps> = ({
     setIsDragOver(false);
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
+
+    let handle: FileSystemFileHandle | undefined;
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      const item = e.dataTransfer.items[0];
+      if ('getAsFileSystemHandle' in item) {
+        try {
+          const h = await (item as any).getAsFileSystemHandle();
+          if (h && h.kind === 'file') {
+            handle = h;
+          }
+        } catch (err) {
+          // ignore
+        }
+      }
+    }
+
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      onOpenPdf(e.dataTransfer.files[0]);
+      onOpenPdf(e.dataTransfer.files[0], handle);
     }
   };
 
@@ -100,7 +126,7 @@ export const EmptyWorkspace: React.FC<EmptyWorkspaceProps> = ({
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
           <button
             type="button"
-            onClick={() => fileInputRef.current?.click()}
+            onClick={handleOpenClick}
             className="w-full sm:w-auto px-6 py-3 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 font-semibold text-white rounded-xl shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
           >
             <FolderPlus className="w-4 h-4" />
