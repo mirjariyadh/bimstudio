@@ -1017,6 +1017,18 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       setIsDraggingMarkup(false);
     }
 
+    // Interactive Scale Calibration: complete on drag-release if dragged distance > 10px
+    if (activeTool === 'calibrate' && currentPoints.length === 1 && hoverPos) {
+      const p1 = currentPoints[0];
+      const p2 = snapPoint || hoverPos;
+      const pxDist = calculateDistance(p1, p2);
+      if (pxDist >= 15) {
+        onCompleteCalibration(pxDist);
+        setCurrentPoints([]);
+        return;
+      }
+    }
+
     // Finish freehand stroke
     if ((activeTool === 'pen' || activeTool === 'highlighter') && currentPoints.length > 1) {
       onAddMarkup({
@@ -1298,6 +1310,27 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Live Scale Calibration On-Canvas Guide Banner */}
+        {activeTool === 'calibrate' && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 border border-amber-500/50 shadow-2xl rounded-xl px-4 py-2.5 flex items-center gap-3 backdrop-blur-md text-xs select-none">
+            <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping shrink-0" />
+            <div className="text-slate-200">
+              <span className="font-bold text-amber-400">Scale Calibration:</span>{' '}
+              {currentPoints.length === 0
+                ? 'Click the 1st point (or drag) along a known dimension on the drawing'
+                : 'Click 2nd point to lock measured distance & open scale calibration'}
+            </div>
+            {currentPoints.length > 0 && (
+              <button
+                onClick={() => setCurrentPoints([])}
+                className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px]"
+              >
+                Reset
+              </button>
+            )}
           </div>
         )}
       </div>

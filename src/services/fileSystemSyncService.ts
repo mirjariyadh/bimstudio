@@ -26,6 +26,18 @@ export function isFileSystemAccessSupported(): boolean {
 }
 
 /**
+ * Checks if the app is currently running embedded inside an iframe.
+ * Browsers forbid direct File System Access API calls in cross-origin subframes.
+ */
+export function isInsideIframe(): boolean {
+  try {
+    return typeof window !== 'undefined' && window.self !== window.top;
+  } catch (e) {
+    return true;
+  }
+}
+
+/**
  * Prompts user to pick a PDF or architectural drawing using native OS file dialog.
  * Retains the FileSystemFileHandle for in-place writing/saving back to source.
  */

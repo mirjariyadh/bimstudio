@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Compass, Check, X, Ruler, HelpCircle } from 'lucide-react';
 import { LengthUnit, PageScaleCalibration } from '../types';
 import {
@@ -27,7 +27,7 @@ export const ScaleCalibrationModal: React.FC<ScaleCalibrationModalProps> = ({
   pageIndex,
   currentCalibration,
   onSaveCalibration,
-  measuredPixelDistance = 500,
+  measuredPixelDistance,
   onStartInteractiveMeasure,
 }) => {
   const [unit, setUnit] = useState<LengthUnit>(currentCalibration.unit || 'm');
@@ -35,12 +35,31 @@ export const ScaleCalibrationModal: React.FC<ScaleCalibrationModalProps> = ({
     currentCalibration.referenceLength || (unit === 'mm' ? 5000 : 5)
   );
   const [pixelDistance, setPixelDistance] = useState<number>(
-    measuredPixelDistance || currentCalibration.referencePixels || 500
+    measuredPixelDistance && measuredPixelDistance > 0
+      ? measuredPixelDistance
+      : currentCalibration.referencePixels || 500
   );
   const [scaleMode, setScaleMode] = useState<'known_dimension' | 'standard_ratio'>(
     'known_dimension'
   );
   const [selectedStandardScale, setSelectedStandardScale] = useState<string>('1:100');
+
+  // Automatically update the pixel distance input whenever measured on the drawing or reopened
+  useEffect(() => {
+    if (isOpen) {
+      if (measuredPixelDistance && measuredPixelDistance > 0) {
+        setPixelDistance(Math.round(measuredPixelDistance * 10) / 10);
+      } else if (currentCalibration?.referencePixels) {
+        setPixelDistance(Math.round(currentCalibration.referencePixels * 10) / 10);
+      }
+      if (currentCalibration?.unit) {
+        setUnit(currentCalibration.unit);
+      }
+      if (currentCalibration?.referenceLength) {
+        setRealWorldLength(currentCalibration.referenceLength);
+      }
+    }
+  }, [isOpen, measuredPixelDistance, currentCalibration]);
 
   if (!isOpen) return null;
 
@@ -154,9 +173,16 @@ export const ScaleCalibrationModal: React.FC<ScaleCalibrationModalProps> = ({
 
               {/* Measured Pixel Distance */}
               <div>
-                <label className="block text-slate-400 font-medium mb-1">
-                  Measured PDF Distance (Pixels):
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-slate-400 font-medium">
+                    Measured PDF Distance (Pixels):
+                  </label>
+                  {measuredPixelDistance && measuredPixelDistance > 0 && (
+                    <span className="text-[11px] text-emerald-400 font-medium flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Picked from drawing
+                    </span>
+                  )}
+                </div>
                 <input
                   type="number"
                   value={Math.round(pixelDistance * 10) / 10}

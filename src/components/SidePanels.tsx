@@ -70,16 +70,29 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
 
   if (!isOpen) {
     return (
-      <div className="w-10 bg-slate-900 border-r border-slate-800 flex flex-col items-center py-3 select-none">
+      <div
+        onClick={onToggle}
+        title="Click to expand Drawing Navigator"
+        className="w-11 bg-slate-900 border-r border-slate-800 flex flex-col items-center py-3 select-none cursor-pointer hover:bg-slate-850 transition-colors z-20 group shrink-0"
+      >
         <button
-          onClick={onToggle}
-          title="Expand Sheet Navigator"
-          className="p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle();
+          }}
+          title="Expand Drawing Navigator"
+          className="p-1.5 text-slate-400 group-hover:text-white rounded hover:bg-slate-800 transition-colors"
         >
           <ChevronRight className="w-4 h-4" />
         </button>
-        <div className="mt-4 writing-vertical text-xs font-semibold tracking-wider text-slate-500 uppercase">
-          Sheets
+        <div className="p-1.5 rounded-md bg-blue-500/15 text-blue-400 mt-2 mb-4">
+          <Layers className="w-4 h-4" />
+        </div>
+        <div
+          className="text-[11px] font-semibold tracking-widest text-slate-400 group-hover:text-slate-200 uppercase select-none whitespace-nowrap transition-colors"
+          style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+        >
+          Drawing Navigator
         </div>
       </div>
     );
@@ -379,16 +392,29 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
 
   if (!isOpen) {
     return (
-      <div className="w-10 bg-slate-900 border-l border-slate-800 flex flex-col items-center py-3 select-none">
+      <div
+        onClick={onToggle}
+        title="Click to expand AEC Intelligence & Review"
+        className="w-11 bg-slate-900 border-l border-slate-800 flex flex-col items-center py-3 select-none cursor-pointer hover:bg-slate-850 transition-colors z-20 group shrink-0"
+      >
         <button
-          onClick={onToggle}
-          title="Open Review & AI Panel"
-          className="p-1.5 text-purple-400 hover:text-white rounded hover:bg-slate-800"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle();
+          }}
+          title="Expand AEC Intelligence & Review"
+          className="p-1.5 text-purple-400 group-hover:text-white rounded hover:bg-slate-800 transition-colors"
         >
-          <Sparkles className="w-4 h-4" />
+          <ChevronLeft className="w-4 h-4" />
         </button>
-        <div className="mt-4 writing-vertical text-xs font-semibold tracking-wider text-slate-500 uppercase">
-          AI & Issues
+        <div className="p-1.5 rounded-md bg-purple-500/15 text-purple-400 mt-2 mb-4">
+          <Sparkles className="w-4 h-4" />
+        </div>
+        <div
+          className="text-[11px] font-semibold tracking-widest text-slate-400 group-hover:text-slate-200 uppercase select-none whitespace-nowrap transition-colors"
+          style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+        >
+          AEC Intelligence & Review
         </div>
       </div>
     );
