@@ -29,6 +29,7 @@ import { HeaderFooterModal } from './components/editPdf/HeaderFooterModal';
 import { PageNumberingModal } from './components/editPdf/PageNumberingModal';
 import { DocumentPropertiesModal } from './components/editPdf/DocumentPropertiesModal';
 import { FlattenModal } from './components/editPdf/FlattenModal';
+import { ClearMarkupsModal } from './components/ClearMarkupsModal';
 import { OpenPdfModal } from './components/OpenPdfModal';
 import { EmptyWorkspace } from './components/EmptyWorkspace';
 import { loadDrawingFilesAsSheets } from './services/pdfService';
@@ -324,6 +325,7 @@ export default function App() {
   const [isPageNumberingOpen, setIsPageNumberingOpen] = useState(false);
   const [isPropertiesOpen, setIsPropertiesOpen] = useState(false);
   const [isFlattenOpen, setIsFlattenOpen] = useState(false);
+  const [isClearMarkupsOpen, setIsClearMarkupsOpen] = useState(false);
 
   // Sidebars
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
@@ -457,6 +459,39 @@ export default function App() {
       );
     }
     setMarkups((prev) => prev.filter((m) => m.id !== id));
+  };
+
+  // Clear Markups on Current Sheet or Entire Project
+  const handleConfirmClearMarkups = (scope: 'current' | 'all') => {
+    saveUndoSnapshot();
+    if (scope === 'current') {
+      const removedCount = pageMarkups.length;
+      setMarkups((prev) => prev.filter((m) => m.pageIndex !== currentDrawingIndex));
+
+      // Subtract count category tallies for items removed on this page
+      const pageCounts = pageMarkups.filter((m) => m.type === 'count' && m.countCategory);
+      if (pageCounts.length > 0) {
+        setCountCategories((cats) =>
+          cats.map((c) => {
+            const numOnPage = pageCounts.filter((m) => m.countCategory === c.id).length;
+            return { ...c, count: Math.max(0, c.count - numOnPage) };
+          })
+        );
+      }
+
+      addToast(
+        'Markups Cleared',
+        `Removed ${removedCount} ${removedCount === 1 ? 'markup' : 'markups'} from sheet ${currentDrawing?.sheetInfo.sheetNumber || ''}.`
+      );
+    } else {
+      const totalRemoved = markups.length;
+      setMarkups([]);
+      setCountCategories((cats) => cats.map((c) => ({ ...c, count: 0 })));
+      addToast(
+        'All Markups Cleared',
+        `Removed ${totalRemoved} ${totalRemoved === 1 ? 'markup' : 'markups'} across all drawing sheets.`
+      );
+    }
   };
 
   // Complete Interactive Calibration line pick
@@ -1015,6 +1050,13 @@ export default function App() {
           countCategories={countCategories}
           onOpenCalibrate={() => setIsCalibrateOpen(true)}
           onOpenCustomStampModal={() => setIsCustomStampOpen(true)}
+          currentSheetMarkupCount={pageMarkups.length}
+          totalMarkupCount={markups.length}
+          onOpenClearMarkupsModal={() => setIsClearMarkupsOpen(true)}
+          canUndo={undoStack.length > 0}
+          onUndo={handleUndo}
+          canRedo={redoStack.length > 0}
+          onRedo={handleRedo}
         />
       )}
 
@@ -1327,6 +1369,17 @@ export default function App() {
         isOpen={isFlattenOpen}
         onClose={() => setIsFlattenOpen(false)}
         onConfirmFlatten={handleFlattenApply}
+      />
+
+      {/* Clear Markups Confirmation Modal */}
+      <ClearMarkupsModal
+        isOpen={isClearMarkupsOpen}
+        onClose={() => setIsClearMarkupsOpen(false)}
+        onConfirmClear={handleConfirmClearMarkups}
+        currentSheetNumber={currentDrawing?.sheetInfo.sheetNumber || 'Active Sheet'}
+        currentSheetTitle={currentDrawing?.sheetInfo.title || 'Technical Drawing'}
+        currentSheetMarkupCount={pageMarkups.length}
+        totalProjectMarkupCount={markups.length}
       />
 
       {/* Open PDF Modal: Replace vs Append */}
