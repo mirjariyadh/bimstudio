@@ -34,6 +34,64 @@ import {
 } from '../services/calibrationService';
 import { SampleDrawing } from '../services/sampleDrawings';
 
+// Robust hit tester for selecting markups on canvas
+const isPointNearMarkup = (m: MarkupItem, pos: Point, zoom: number): boolean => {
+  const threshold = Math.max(14, 28 / zoom);
+  if (!m.points || m.points.length === 0) return false;
+
+  // 1. Proximity to any defined vertex
+  if (m.points.some((p) => calculateDistance(p, pos) < threshold)) {
+    return true;
+  }
+
+  // 2. Single-point items (stamp, count, textbox origin)
+  if (m.points.length === 1) {
+    const p = m.points[0];
+    const w = m.type === 'stamp' ? 140 : m.type === 'count' ? 44 : 160;
+    const h = m.type === 'stamp' ? 50 : m.type === 'count' ? 44 : 60;
+    return (
+      pos.x >= p.x - w / 2 - threshold &&
+      pos.x <= p.x + w / 2 + threshold &&
+      pos.y >= p.y - h / 2 - threshold &&
+      pos.y <= p.y + h / 2 + threshold
+    );
+  }
+
+  // 3. Multi-point bounding box check for closed shapes (rect, area, cloud, note)
+  const xs = m.points.map((p) => p.x);
+  const ys = m.points.map((p) => p.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+
+  if (
+    ['rectangle', 'area', 'revision_cloud', 'textbox', 'callout', 'note'].includes(m.type) &&
+    pos.x >= minX - threshold &&
+    pos.x <= maxX + threshold &&
+    pos.y >= minY - threshold &&
+    pos.y <= maxY + threshold
+  ) {
+    return true;
+  }
+
+  // 4. Line segment proximity for lines, dimensions, distance, polyline, pen
+  for (let i = 0; i < m.points.length - 1; i++) {
+    const p1 = m.points[i];
+    const p2 = m.points[i + 1];
+    const l2 = (p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2;
+    if (l2 === 0) continue;
+    const t = Math.max(0, Math.min(1, ((pos.x - p1.x) * (p2.x - p1.x) + (pos.y - p1.y) * (p2.y - p1.y)) / l2));
+    const projX = p1.x + t * (p2.x - p1.x);
+    const projY = p1.y + t * (p2.y - p1.y);
+    if (calculateDistance(pos, { x: projX, y: projY }) < threshold) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 interface DrawingCanvasProps {
   currentDrawing: SampleDrawing;
   markups: MarkupItem[];
@@ -87,6 +145,38 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   const [selectedMarkupId, setSelectedMarkupId] = useState<string | null>(null);
   const [isDraggingMarkup, setIsDraggingMarkup] = useState(false);
   const [dragStartPos, setDragStartPos] = useState<Point>({ x: 0, y: 0 });
+
+  // Auto-clear selection if the markup no longer exists in markups list
+  useEffect(() => {
+    if (selectedMarkupId && !markups.some((m) => m.id === selectedMarkupId)) {
+      setSelectedMarkupId(null);
+    }
+  }, [markups, selectedMarkupId]);
+
+  // Keyboard shortcuts (Del, Backspace, Esc) for selected markup
+  useEffect(() => {
+    const handleCanvasKeyDown = (e: KeyboardEvent) => {
+      if (
+        document.activeElement?.tagName === 'INPUT' ||
+        document.activeElement?.tagName === 'TEXTAREA'
+      ) {
+        return;
+      }
+      if (selectedMarkupId) {
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault();
+          const toDelete = selectedMarkupId;
+          setSelectedMarkupId(null);
+          onDeleteMarkup(toDelete);
+        } else if (e.key === 'Escape') {
+          setSelectedMarkupId(null);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleCanvasKeyDown);
+    return () => window.removeEventListener('keydown', handleCanvasKeyDown);
+  }, [selectedMarkupId, onDeleteMarkup]);
 
   // Text input dialog for Text / Sticky Note / Callout
   const [textModalOpen, setTextModalOpen] = useState(false);
@@ -556,12 +646,23 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         let minY = Infinity;
         let maxX = -Infinity;
         let maxY = -Infinity;
-        m.points.forEach((pt) => {
-          minX = Math.min(minX, pt.x);
-          minY = Math.min(minY, pt.y);
-          maxX = Math.max(maxX, pt.x);
-          maxY = Math.max(maxY, pt.y);
-        });
+
+        if (m.points.length === 1) {
+          const pt = m.points[0];
+          const w = m.type === 'stamp' ? 160 : m.type === 'count' ? 44 : 140;
+          const h = m.type === 'stamp' ? 50 : m.type === 'count' ? 44 : 50;
+          minX = pt.x - w / 2;
+          maxX = pt.x + w / 2;
+          minY = pt.y - h / 2;
+          maxY = pt.y + h / 2;
+        } else {
+          m.points.forEach((pt) => {
+            minX = Math.min(minX, pt.x);
+            minY = Math.min(minY, pt.y);
+            maxX = Math.max(maxX, pt.x);
+            maxY = Math.max(maxY, pt.y);
+          });
+        }
 
         const pad = 8;
         ctx.strokeStyle = '#3b82f6';
@@ -569,6 +670,18 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         ctx.lineWidth = 1.5;
         ctx.strokeRect(minX - pad, minY - pad, maxX - minX + pad * 2, maxY - minY + pad * 2);
         ctx.setLineDash([]);
+
+        // Small corner grip handles
+        ctx.fillStyle = '#3b82f6';
+        const corners = [
+          { x: minX - pad, y: minY - pad },
+          { x: maxX + pad, y: minY - pad },
+          { x: minX - pad, y: maxY + pad },
+          { x: maxX + pad, y: maxY + pad },
+        ];
+        corners.forEach((c) => {
+          ctx.fillRect(c.x - 3, c.y - 3, 6, 6);
+        });
       }
 
       ctx.restore();
@@ -709,9 +822,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
     // Selection tool: hit test markups
     if (activeTool === 'select') {
-      const hit = markups.find((m) => {
-        return m.points.some((p) => calculateDistance(p, pos) < 25 / zoom);
-      });
+      const hit = markups.find((m) => isPointNearMarkup(m, pos, zoom));
       if (hit) {
         setSelectedMarkupId(hit.id);
         setIsDraggingMarkup(true);
@@ -1099,36 +1210,60 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
         {/* Selected Markup Floating Action Palette */}
         {selectedMarkupId && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 bg-slate-900/90 backdrop-blur border border-slate-700 text-white px-3 py-1.5 rounded-lg shadow-xl text-xs">
-            <span className="font-semibold text-blue-400 mr-1">{selectedMarkupId}</span>
+          <div
+            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseUp={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 bg-slate-900/95 backdrop-blur-md border border-slate-700 text-white px-3 py-1.5 rounded-xl shadow-2xl text-xs select-none"
+          >
+            <span className="font-mono font-bold text-blue-400 mr-1 bg-blue-500/20 px-1.5 py-0.5 rounded border border-blue-500/30">
+              {selectedMarkupId}
+            </span>
             <button
-              onClick={() => {
+              type="button"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
                 const item = markups.find((m) => m.id === selectedMarkupId);
                 if (item) {
                   onAddMarkup({
                     ...item,
-                    id: `M-${String(markups.length + 1).padStart(3, '0')}`,
+                    id: `M-${String(Date.now()).slice(-4)}`,
                     points: item.points.map((p) => ({ x: p.x + 20, y: p.y + 20 })),
                   });
                 }
               }}
               title="Duplicate (Ctrl+D)"
-              className="p-1 hover:bg-slate-800 rounded text-slate-300 hover:text-white"
+              className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white transition-colors cursor-pointer"
             >
-              <Copy className="w-3.5 h-3.5" />
+              <Copy className="w-4 h-4" />
             </button>
             <button
-              onClick={() => onDeleteMarkup(selectedMarkupId)}
-              title="Delete (Del)"
-              className="p-1 hover:bg-red-900/60 rounded text-red-400 hover:text-red-300"
+              type="button"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                const idToDelete = selectedMarkupId;
+                setSelectedMarkupId(null);
+                onDeleteMarkup(idToDelete);
+              }}
+              title="Delete (Del / Backspace)"
+              className="p-1.5 hover:bg-red-950/60 rounded-lg text-red-400 hover:text-red-300 hover:border-red-500/30 border border-transparent transition-colors cursor-pointer"
             >
-              <Trash2 className="w-3.5 h-3.5" />
+              <Trash2 className="w-4 h-4" />
             </button>
             <button
-              onClick={() => setSelectedMarkupId(null)}
-              className="p-1 hover:bg-slate-800 rounded text-slate-400"
+              type="button"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedMarkupId(null);
+              }}
+              title="Deselect (Esc)"
+              className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
         )}

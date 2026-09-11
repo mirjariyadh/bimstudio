@@ -9,6 +9,7 @@ import {
   FilePlus,
   Image as ImageIcon,
   Crop,
+  BoxSelect,
   Maximize2,
   RotateCw,
   Layers,
@@ -33,7 +34,7 @@ interface EditPdfToolbarProps {
   activeTool: ToolType;
   onSelectTool: (tool: ToolType) => void;
   // Modal openers
-  onOpenCrop: () => void;
+  onOpenCrop: (freedom?: boolean) => void;
   onOpenResize: () => void;
   onOpenRotate: () => void;
   onOpenOrganize: () => void;
@@ -106,12 +107,21 @@ export const EditPdfToolbar: React.FC<EditPdfToolbarProps> = ({
         {/* Group 2: Sheet Geometry Tools */}
         <div className="flex items-center bg-slate-950 rounded-lg border border-slate-800 p-0.5">
           <button
-            onClick={onOpenCrop}
+            onClick={() => onOpenCrop(false)}
             className="flex items-center gap-1 px-2 py-1 rounded text-slate-300 hover:text-white hover:bg-slate-850 font-medium transition-all"
             title="Crop Technical Sheet Margins"
           >
             <Crop className="w-3.5 h-3.5 text-blue-400" />
             <span>Crop</span>
+          </button>
+
+          <button
+            onClick={() => onOpenCrop(true)}
+            className="flex items-center gap-1 px-2 py-1 rounded text-slate-300 hover:text-white hover:bg-slate-850 font-medium transition-all"
+            title="Freedom Selection Area Tool to Crop Sheet"
+          >
+            <BoxSelect className="w-3.5 h-3.5 text-sky-400" />
+            <span>Freedom Area</span>
           </button>
 
           <button

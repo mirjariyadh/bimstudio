@@ -304,6 +304,12 @@ export default function App() {
   // PDF Edit Suite Modals
   const [isCustomStampOpen, setIsCustomStampOpen] = useState(false);
   const [isCropOpen, setIsCropOpen] = useState(false);
+  const [cropInitialFreedom, setCropInitialFreedom] = useState(true);
+
+  const handleOpenCrop = (freedom = true) => {
+    setCropInitialFreedom(freedom);
+    setIsCropOpen(true);
+  };
   const [isResizeOpen, setIsResizeOpen] = useState(false);
   const [isOrganizeOpen, setIsOrganizeOpen] = useState(false);
   const [isSortOpen, setIsSortOpen] = useState(false);
@@ -416,7 +422,8 @@ export default function App() {
 
     // If placing a custom stamp
     if (newMarkup.type === 'stamp' && activeCustomStamp) {
-      const resolved = resolveStampVariables(activeCustomStamp.text, currentDrawing.sheetInfo);
+      const targetSheet = currentDrawing?.sheetInfo || activeSheetInfo;
+      const resolved = resolveStampVariables(activeCustomStamp.text, targetSheet);
       enriched = {
         ...enriched,
         stampText: resolved,
@@ -549,8 +556,102 @@ export default function App() {
   // --- EDIT PDF OPERATIONS ---
 
   // 1. Crop Page
-  const handleCropApply = (cropArea: { x: number; y: number; width: number; height: number }) => {
-    addToast('Page Cropped', `Cropped sheet ${currentDrawing.sheetInfo.sheetNumber} margins.`);
+  const handleCropApply = (cropArea: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    scope: 'current' | 'all';
+  }) => {
+    if (!currentDrawing) {
+      addToast('No Active Sheet', 'Cannot crop without an active sheet.', 'warning');
+      return;
+    }
+
+    const { x, y, width: cropW, height: cropH, scope } = cropArea;
+    if (cropW < 20 || cropH < 20) {
+      addToast('Invalid Dimensions', 'Crop area must be at least 20 × 20 pixels.', 'warning');
+      return;
+    }
+
+    const targetSheetId = currentDrawing.id;
+    const targetPageIndex = currentDrawing.sheetInfo.pageIndex;
+    const origW = currentDrawing.width;
+    const origH = currentDrawing.height;
+
+    // Helper to generate a cropped SampleDrawing
+    const cropSingleDrawing = (
+      sheet: SampleDrawing,
+      cX: number,
+      cY: number,
+      cW: number,
+      cH: number
+    ): SampleDrawing => {
+      const prevRender = sheet.render;
+      const prevW = sheet.width;
+      const prevH = sheet.height;
+
+      const croppedRender = (
+        ctx: CanvasRenderingContext2D,
+        w: number,
+        h: number,
+        options?: { highlightDiff?: boolean }
+      ) => {
+        const offscreen = document.createElement('canvas');
+        offscreen.width = prevW;
+        offscreen.height = prevH;
+        const offCtx = offscreen.getContext('2d');
+        if (offCtx) {
+          prevRender(offCtx, prevW, prevH, options);
+          ctx.clearRect(0, 0, w, h);
+          ctx.drawImage(offscreen, cX, cY, cW, cH, 0, 0, w, h);
+        }
+      };
+
+      return {
+        ...sheet,
+        width: cW,
+        height: cH,
+        render: croppedRender,
+      };
+    };
+
+    // Update sheets state
+    setSheets((prevSheets) => {
+      return prevSheets.map((s) => {
+        if (scope === 'all' || s.id === targetSheetId) {
+          const scaleX = s.width / origW;
+          const scaleY = s.height / origH;
+          const sX = Math.round(x * scaleX);
+          const sY = Math.round(y * scaleY);
+          const sW = Math.round(cropW * scaleX);
+          const sH = Math.round(cropH * scaleY);
+          return cropSingleDrawing(s, sX, sY, sW, sH);
+        }
+        return s;
+      });
+    });
+
+    // Shift markups on the cropped page(s) so visual position relative to technical drawing stays aligned
+    setMarkups((prevMarkups) => {
+      return prevMarkups.map((m) => {
+        const isTarget = scope === 'all' || m.pageIndex === targetPageIndex;
+        if (!isTarget) return m;
+
+        return {
+          ...m,
+          points: m.points.map((pt) => ({
+            x: Math.round(pt.x - x),
+            y: Math.round(pt.y - y),
+          })),
+        };
+      });
+    });
+
+    addToast(
+      'Sheet Cropped Successfully',
+      `Cropped ${scope === 'all' ? 'all sheets' : `sheet ${currentDrawing.sheetInfo.sheetNumber}`} to ${cropW} × ${cropH} px.`
+    );
   };
 
   // 2. Resize Sheet
@@ -624,7 +725,7 @@ export default function App() {
         revision: 'REV 01',
         date: new Date().toISOString().slice(0, 10),
         scale: '1:100',
-        projectName: currentDrawing.sheetInfo.projectName,
+        projectName: currentDrawing?.sheetInfo?.projectName || 'BIM Project',
         pageIndex: sheets.length,
       },
       width: 1400,
@@ -724,6 +825,11 @@ export default function App() {
 
   // 15. Export with various types
   const handleExportPdf = (type: 'edited' | 'original' | 'flattened' | 'json' | 'report' = 'edited') => {
+    if (!currentDrawing) {
+      addToast('No Active Sheet', 'Please open or create a drawing sheet before exporting.', 'warning');
+      return;
+    }
+
     if (type === 'json') {
       const jsonStr = JSON.stringify({ sheet: currentDrawing.sheetInfo, markups: pageMarkups, issues }, null, 2);
       downloadFile(jsonStr, `${currentDrawing.sheetInfo.sheetNumber}_Markups.json`);
@@ -911,7 +1017,7 @@ ${issues.map((i) => `[${i.id}] ${i.title} (${i.priority}) - Status: ${i.status}`
         <EditPdfToolbar
           activeTool={activeTool}
           onSelectTool={(tool) => setActiveTool(tool)}
-          onOpenCrop={() => setIsCropOpen(true)}
+          onOpenCrop={handleOpenCrop}
           onOpenResize={() => setIsResizeOpen(true)}
           onOpenRotate={() => handleRotatePage()}
           onOpenOrganize={() => setIsOrganizeOpen(true)}
@@ -1040,7 +1146,7 @@ ${issues.map((i) => `[${i.id}] ${i.title} (${i.priority}) - Status: ${i.status}`
       <ScaleCalibrationModal
         isOpen={isCalibrateOpen}
         onClose={() => setIsCalibrateOpen(false)}
-        pageIndex={currentDrawing.sheetInfo.pageIndex}
+        pageIndex={currentDrawing?.sheetInfo?.pageIndex ?? 0}
         currentCalibration={currentCalibration}
         onSaveCalibration={handleSaveCalibration}
         measuredPixelDistance={calibrationPixelDist}
@@ -1053,7 +1159,7 @@ ${issues.map((i) => `[${i.id}] ${i.title} (${i.priority}) - Status: ${i.status}`
       <ReviewReportModal
         isOpen={isReportOpen}
         onClose={() => setIsReportOpen(false)}
-        currentSheet={currentDrawing.sheetInfo}
+        currentSheet={currentDrawing?.sheetInfo || activeSheetInfo}
         markups={pageMarkups}
         issues={issues}
       />
@@ -1075,7 +1181,7 @@ ${issues.map((i) => `[${i.id}] ${i.title} (${i.priority}) - Status: ${i.status}`
       <CustomStampModal
         isOpen={isCustomStampOpen}
         onClose={() => setIsCustomStampOpen(false)}
-        sheetInfo={currentDrawing.sheetInfo}
+        sheetInfo={currentDrawing?.sheetInfo || activeSheetInfo}
         onSelectStamp={(stamp) => {
           setActiveCustomStamp(stamp);
           setActiveTool('stamp');
@@ -1088,6 +1194,7 @@ ${issues.map((i) => `[${i.id}] ${i.title} (${i.priority}) - Status: ${i.status}`
         isOpen={isCropOpen}
         onClose={() => setIsCropOpen(false)}
         currentDrawing={currentDrawing || ALL_SAMPLE_DRAWINGS[0]}
+        initialFreedomMode={cropInitialFreedom}
         onApplyCrop={handleCropApply}
       />
 

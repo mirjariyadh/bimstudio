@@ -695,8 +695,13 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                         </span>
                       </div>
                       <button
-                        onClick={() => onDeleteMarkup(m.id)}
-                        className="text-slate-500 hover:text-red-400 p-0.5"
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteMarkup(m.id);
+                        }}
+                        title="Delete markup"
+                        className="text-slate-500 hover:text-red-400 p-1 rounded hover:bg-red-950/40 cursor-pointer transition-colors"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
