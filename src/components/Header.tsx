@@ -26,6 +26,9 @@ import {
   FileCode,
   Check,
   Loader2,
+  Trash2,
+  RefreshCw,
+  Plus,
 } from 'lucide-react';
 import { DrawingSheetInfo, AppWorkspaceMode } from '../types';
 
@@ -34,6 +37,9 @@ interface HeaderProps {
   availableSheets: DrawingSheetInfo[];
   onSelectSheet: (id: string) => void;
   onUploadPdf: (file: File) => void;
+  onRemoveCurrentSheet?: () => void;
+  onClearAllSheets?: () => void;
+  onReloadSamples?: () => void;
   workspaceMode: AppWorkspaceMode;
   onSelectWorkspaceMode: (mode: AppWorkspaceMode) => void;
   onOpenCompare: () => void;
@@ -53,6 +59,9 @@ export const Header: React.FC<HeaderProps> = ({
   availableSheets,
   onSelectSheet,
   onUploadPdf,
+  onRemoveCurrentSheet,
+  onClearAllSheets,
+  onReloadSamples,
   workspaceMode,
   onSelectWorkspaceMode,
   onOpenCompare,
@@ -68,6 +77,7 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showDocMenu, setShowDocMenu] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -107,37 +117,114 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Sheet / Drawing Selector */}
+        {/* Sheet / Drawing Selector & Document Actions */}
         <div className="flex items-center gap-1.5">
-          <FileText className="w-4 h-4 text-slate-400" />
-          <select
-            value={currentSheet.id}
-            onChange={(e) => onSelectSheet(e.target.value)}
-            className="bg-slate-800 text-xs font-medium text-slate-200 border border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 max-w-[210px] cursor-pointer"
-          >
-            {availableSheets.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.sheetNumber} - {s.title} ({s.revision})
-              </option>
-            ))}
-          </select>
+          <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+          {availableSheets.length > 0 ? (
+            <select
+              value={currentSheet.id}
+              onChange={(e) => onSelectSheet(e.target.value)}
+              className="bg-slate-800 text-xs font-medium text-slate-200 border border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 max-w-[210px] cursor-pointer"
+            >
+              {availableSheets.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.sheetNumber} - {s.title} ({s.revision})
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="text-xs text-slate-400 bg-slate-800/80 px-2.5 py-1.5 rounded-lg border border-slate-700 font-medium">
+              No Sheets Loaded
+            </span>
+          )}
 
-          {/* Upload Button */}
+          {/* Hidden File Input for PDF / Image */}
           <input
             type="file"
             ref={fileInputRef}
             onChange={handleFileChange}
-            accept=".pdf,image/*"
+            accept=".pdf,image/png,image/jpeg,image/webp,image/svg+xml"
             className="hidden"
           />
+
+          {/* Primary Open PDF Button */}
           <button
             onClick={() => fileInputRef.current?.click()}
-            title="Upload PDF or Drawing"
-            className="flex items-center gap-1 px-2 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg transition-colors"
+            title="Open architectural PDF or drawing"
+            className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg transition-colors shadow-xs cursor-pointer"
           >
             <Upload className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Open PDF</span>
+            <span>Open PDF</span>
           </button>
+
+          {/* Document Management Menu (Remove, Clear, Reset) */}
+          <div className="relative">
+            <button
+              onClick={() => setShowDocMenu(!showDocMenu)}
+              title="Sheet and Document Options"
+              className="p-1.5 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors cursor-pointer"
+            >
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+
+            {showDocMenu && (
+              <div className="absolute left-0 top-full mt-1 w-56 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1.5 z-50 text-xs text-slate-200 animate-in fade-in slide-in-from-top-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDocMenu(false);
+                    fileInputRef.current?.click();
+                  }}
+                  className="w-full text-left px-3 py-2 hover:bg-slate-800 flex items-center gap-2 text-slate-200 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Open / Add Another PDF</span>
+                </button>
+
+                {availableSheets.length > 0 && onRemoveCurrentSheet && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDocMenu(false);
+                      onRemoveCurrentSheet();
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-red-950/40 text-red-400 hover:text-red-300 flex items-center gap-2 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Remove Current Sheet ({currentSheet.sheetNumber})</span>
+                  </button>
+                )}
+
+                {availableSheets.length > 0 && onClearAllSheets && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDocMenu(false);
+                      onClearAllSheets();
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-red-950/40 text-red-400 hover:text-red-300 flex items-center gap-2 border-t border-slate-800 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Clear All Sheets (New Project)</span>
+                  </button>
+                )}
+
+                {onReloadSamples && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDocMenu(false);
+                      onReloadSamples();
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-800 text-slate-400 hover:text-slate-200 flex items-center gap-2 border-t border-slate-800 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Reload Sample BIM Project</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Scale Badge (Relevant in Drawing Mode) */}

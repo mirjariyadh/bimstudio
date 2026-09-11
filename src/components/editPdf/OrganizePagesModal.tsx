@@ -24,8 +24,13 @@ interface OrganizePagesModalProps {
   isOpen: boolean;
   onClose: () => void;
   sheets: SampleDrawing[];
-  onUpdateSheets: (newSheets: SampleDrawing[]) => void;
-  onSelectSheet: (id: string) => void;
+  onUpdateSheets?: (newSheets: SampleDrawing[]) => void;
+  onReorderSheets?: (newSheets: SampleDrawing[]) => void;
+  onSelectSheet?: (id: string) => void;
+  onDuplicatePage?: (sheetId: string) => void;
+  onDeletePage?: (sheetId: string) => void;
+  onRotatePage?: (sheetId: string, angle?: number) => void;
+  onInsertBlankPage?: () => void;
 }
 
 export const OrganizePagesModal: React.FC<OrganizePagesModalProps> = ({
@@ -33,11 +38,25 @@ export const OrganizePagesModal: React.FC<OrganizePagesModalProps> = ({
   onClose,
   sheets,
   onUpdateSheets,
+  onReorderSheets,
   onSelectSheet,
+  onDuplicatePage,
+  onDeletePage,
+  onRotatePage,
+  onInsertBlankPage,
 }) => {
   const [workingSheets, setWorkingSheets] = useState<SampleDrawing[]>(sheets);
   const [selectedSheetIds, setSelectedSheetIds] = useState<string[]>([]);
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
+
+  // Sync working sheets whenever modal opens or sheets prop updates
+  React.useEffect(() => {
+    if (isOpen) {
+      setWorkingSheets(sheets);
+      setSelectedSheetIds([]);
+      setDraggedIdx(null);
+    }
+  }, [isOpen, sheets]);
 
   if (!isOpen) return null;
 
@@ -158,8 +177,11 @@ export const OrganizePagesModal: React.FC<OrganizePagesModalProps> = ({
   };
 
   const handleSaveAndApply = () => {
-    onUpdateSheets(workingSheets);
-    if (workingSheets.length > 0) {
+    const updateFn = onUpdateSheets || onReorderSheets;
+    if (typeof updateFn === 'function') {
+      updateFn(workingSheets);
+    }
+    if (workingSheets.length > 0 && typeof onSelectSheet === 'function') {
       onSelectSheet(workingSheets[0].id);
     }
     onClose();

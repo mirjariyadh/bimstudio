@@ -5,6 +5,7 @@
 
 import React, { useState } from 'react';
 import { Image, Upload, X, Check, Trash2, ArrowUpDown, Download, RotateCw } from 'lucide-react';
+import { SampleDrawing } from '../../services/sampleDrawings';
 
 interface ImageItem {
   id: string;
@@ -18,13 +19,15 @@ interface ImageItem {
 interface ImageToPdfModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onGeneratePdf: (fileName: string, pageCount: number) => void;
+  onGeneratePdf?: (fileName: string, pageCount: number) => void;
+  onAddSheetsToProject?: (newSheets: SampleDrawing[]) => void;
 }
 
 export const ImageToPdfModal: React.FC<ImageToPdfModalProps> = ({
   isOpen,
   onClose,
   onGeneratePdf,
+  onAddSheetsToProject,
 }) => {
   const [images, setImages] = useState<ImageItem[]>([
     {
@@ -88,7 +91,42 @@ export const ImageToPdfModal: React.FC<ImageToPdfModalProps> = ({
     setIsProcessing(true);
     setTimeout(() => {
       setIsProcessing(false);
-      onGeneratePdf(outputFileName, images.length);
+      if (typeof onGeneratePdf === 'function') {
+        onGeneratePdf(outputFileName, images.length);
+      }
+      if (typeof onAddSheetsToProject === 'function') {
+        const generatedSheets: SampleDrawing[] = images.map((img, idx) => {
+          const id = `IMG-SHEET-${Date.now()}-${idx}`;
+          return {
+            id,
+            sheetInfo: {
+              id,
+              sheetNumber: `PH-${String(idx + 1).padStart(3, '0')}`,
+              title: img.name.replace(/\.[^/.]+$/, ''),
+              discipline: 'General',
+              revision: 'REV 01',
+              date: new Date().toISOString().slice(0, 10),
+              scale: 'NTS',
+              projectName: 'Photo Survey',
+              pageIndex: idx,
+            },
+            width: img.width || 1200,
+            height: img.height || 800,
+            extractedText: `Imported photo sheet: ${img.name}`,
+            render: (ctx, w, h) => {
+              const htmlImg = new window.Image();
+              htmlImg.crossOrigin = 'anonymous';
+              htmlImg.src = img.url;
+              if (htmlImg.complete) {
+                ctx.drawImage(htmlImg, 0, 0, w, h);
+              } else {
+                htmlImg.onload = () => ctx.drawImage(htmlImg, 0, 0, w, h);
+              }
+            },
+          };
+        });
+        onAddSheetsToProject(generatedSheets);
+      }
       onClose();
     }, 900);
   };

@@ -47,6 +47,10 @@ interface LeftSidebarProps {
   currentSheetId: string;
   onSelectSheet: (id: string) => void;
   onRotateSheet: () => void;
+  onRemoveSheet?: (id: string) => void;
+  onClearAllSheets?: () => void;
+  onOpenPdfPrompt?: () => void;
+  onReloadSamples?: () => void;
 }
 
 export const LeftSidebar: React.FC<LeftSidebarProps> = ({
@@ -56,6 +60,10 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   currentSheetId,
   onSelectSheet,
   onRotateSheet,
+  onRemoveSheet,
+  onClearAllSheets,
+  onOpenPdfPrompt,
+  onReloadSamples,
 }) => {
   const [activeTab, setActiveTab] = useState<'sheets' | 'index' | 'organize'>('sheets');
   const [searchQuery, setSearchQuery] = useState('');
@@ -148,34 +156,109 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
       <div className="flex-1 overflow-y-auto p-2 space-y-2">
         {activeTab === 'sheets' && (
           <div className="space-y-2">
-            {filteredSheets.map((s, idx) => {
-              const isSelected = s.id === currentSheetId;
-              return (
-                <div
-                  key={s.id}
-                  onClick={() => onSelectSheet(s.id)}
-                  className={`p-2.5 rounded-lg border cursor-pointer transition-all ${
-                    isSelected
-                      ? 'bg-blue-600/15 border-blue-500 text-white'
-                      : 'bg-slate-950/60 border-slate-800 hover:bg-slate-800 text-slate-300'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-mono font-bold text-xs text-blue-400">
-                      {s.sheetInfo.sheetNumber}
-                    </span>
-                    <span className="text-[10px] uppercase font-semibold px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700">
-                      {s.sheetInfo.revision}
-                    </span>
+            {/* Quick Sheets Action Bar */}
+            <div className="flex items-center justify-between px-1 py-1 text-xs">
+              <span className="font-semibold text-[11px] text-slate-400">
+                {sheets.length} {sheets.length === 1 ? 'Sheet' : 'Sheets'}
+              </span>
+              <div className="flex items-center gap-1.5">
+                {onOpenPdfPrompt && (
+                  <button
+                    type="button"
+                    onClick={onOpenPdfPrompt}
+                    title="Add PDF or Drawing"
+                    className="px-2 py-0.5 bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 rounded text-[11px] font-medium flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>Add PDF</span>
+                  </button>
+                )}
+                {sheets.length > 0 && onClearAllSheets && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm('Remove all sheets from this workspace?')) {
+                        onClearAllSheets();
+                      }
+                    }}
+                    title="Remove all sheets"
+                    className="p-1 hover:bg-red-950/50 text-slate-400 hover:text-red-400 rounded text-[11px] cursor-pointer transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {filteredSheets.length === 0 ? (
+              <div className="p-4 text-center border border-dashed border-slate-800 rounded-xl my-3 space-y-2">
+                <p className="text-xs text-slate-400">
+                  {sheets.length === 0 ? 'No drawings in workspace' : 'No matching sheets found'}
+                </p>
+                {onOpenPdfPrompt && (
+                  <button
+                    type="button"
+                    onClick={onOpenPdfPrompt}
+                    className="w-full py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold cursor-pointer"
+                  >
+                    Open PDF Document
+                  </button>
+                )}
+                {sheets.length === 0 && onReloadSamples && (
+                  <button
+                    type="button"
+                    onClick={onReloadSamples}
+                    className="w-full py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium cursor-pointer"
+                  >
+                    Load Sample BIM Project
+                  </button>
+                )}
+              </div>
+            ) : (
+              filteredSheets.map((s) => {
+                const isSelected = s.id === currentSheetId;
+                return (
+                  <div
+                    key={s.id}
+                    onClick={() => onSelectSheet(s.id)}
+                    className={`p-2.5 rounded-lg border cursor-pointer transition-all relative group ${
+                      isSelected
+                        ? 'bg-blue-600/15 border-blue-500 text-white'
+                        : 'bg-slate-950/60 border-slate-800 hover:bg-slate-800 text-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-mono font-bold text-xs text-blue-400">
+                        {s.sheetInfo.sheetNumber}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] uppercase font-semibold px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                          {s.sheetInfo.revision}
+                        </span>
+                        {onRemoveSheet && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onRemoveSheet(s.id);
+                            }}
+                            title="Remove this sheet"
+                            className="p-1 rounded text-slate-500 hover:text-red-400 hover:bg-red-950/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="font-medium text-xs truncate pr-2">{s.sheetInfo.title}</div>
+                    <div className="flex items-center justify-between text-[10px] text-slate-400 mt-1">
+                      <span>{s.sheetInfo.discipline}</span>
+                      <span>Scale: {s.sheetInfo.scale}</span>
+                    </div>
                   </div>
-                  <div className="font-medium text-xs truncate">{s.sheetInfo.title}</div>
-                  <div className="flex items-center justify-between text-[10px] text-slate-400 mt-1">
-                    <span>{s.sheetInfo.discipline}</span>
-                    <span>Scale: {s.sheetInfo.scale}</span>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         )}
 

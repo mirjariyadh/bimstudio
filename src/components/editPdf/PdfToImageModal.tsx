@@ -12,14 +12,14 @@ interface PdfToImageModalProps {
   isOpen: boolean;
   onClose: () => void;
   sheets: SampleDrawing[];
-  activeSheetIndex: number;
+  activeSheetIndex?: number;
 }
 
 export const PdfToImageModal: React.FC<PdfToImageModalProps> = ({
   isOpen,
   onClose,
   sheets,
-  activeSheetIndex,
+  activeSheetIndex = 0,
 }) => {
   const [format, setFormat] = useState<'png' | 'jpeg' | 'webp'>('png');
   const [scope, setScope] = useState<'current' | 'all'>('current');

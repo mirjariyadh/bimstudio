@@ -10,7 +10,9 @@ interface CompressPdfModalProps {
   isOpen: boolean;
   onClose: () => void;
   originalSizeMb?: number;
-  onCompress: (preset: string, finalSizeMb: number) => void;
+  currentDrawing?: any;
+  onCompress?: (preset: string, finalSizeMb: number) => void;
+  onApplyCompression?: (preset: string, finalSizeMb: number) => void;
 }
 
 type PresetType = 'maximum' | 'high' | 'balanced' | 'small' | 'custom';
@@ -19,7 +21,9 @@ export const CompressPdfModal: React.FC<CompressPdfModalProps> = ({
   isOpen,
   onClose,
   originalSizeMb = 34.8,
+  currentDrawing,
   onCompress,
+  onApplyCompression,
 }) => {
   const [preset, setPreset] = useState<PresetType>('balanced');
   const [customQuality, setCustomQuality] = useState(75);
@@ -58,7 +62,10 @@ export const CompressPdfModal: React.FC<CompressPdfModalProps> = ({
         compressed: estimatedSize,
         reductionPct: savingsPct,
       });
-      onCompress(preset, estimatedSize);
+      const compressFn = onCompress || onApplyCompression;
+      if (typeof compressFn === 'function') {
+        compressFn(preset, estimatedSize);
+      }
     }, 1100);
   };
 

@@ -11,7 +11,8 @@ interface SortPagesModalProps {
   isOpen: boolean;
   onClose: () => void;
   sheets: SampleDrawing[];
-  onApplySort: (sortedSheets: SampleDrawing[]) => void;
+  onApplySort?: (sortedSheets: SampleDrawing[]) => void;
+  onSortSheets?: (sortedSheets: SampleDrawing[]) => void;
 }
 
 type SortCriteria =
@@ -27,6 +28,7 @@ export const SortPagesModal: React.FC<SortPagesModalProps> = ({
   onClose,
   sheets,
   onApplySort,
+  onSortSheets,
 }) => {
   const [criteria, setCriteria] = useState<SortCriteria>('drawing_number');
   const [direction, setDirection] = useState<'asc' | 'desc'>('asc');
@@ -106,7 +108,10 @@ export const SortPagesModal: React.FC<SortPagesModalProps> = ({
   const previewSorted = getSortedSheets();
 
   const handleApply = () => {
-    onApplySort(previewSorted);
+    const sortFn = onApplySort || onSortSheets;
+    if (typeof sortFn === 'function') {
+      sortFn(previewSorted);
+    }
     onClose();
   };
 

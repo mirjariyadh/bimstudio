@@ -29,6 +29,9 @@ import { HeaderFooterModal } from './components/editPdf/HeaderFooterModal';
 import { PageNumberingModal } from './components/editPdf/PageNumberingModal';
 import { DocumentPropertiesModal } from './components/editPdf/DocumentPropertiesModal';
 import { FlattenModal } from './components/editPdf/FlattenModal';
+import { OpenPdfModal } from './components/OpenPdfModal';
+import { EmptyWorkspace } from './components/EmptyWorkspace';
+import { loadDrawingFilesAsSheets } from './services/pdfService';
 import {
   ToolType,
   MarkupItem,
@@ -319,19 +322,40 @@ export default function App() {
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
 
+  // PDF import modal & processing state
+  const [pendingPdfFile, setPendingPdfFile] = useState<File | null>(null);
+  const [isProcessingPdf, setIsProcessingPdf] = useState(false);
+  const [pdfProgressText, setPdfProgressText] = useState('');
+
   // Active current drawing object
   const currentDrawingIndex = sheets.findIndex((s) => s.id === currentSheetId);
-  const currentDrawing = sheets[currentDrawingIndex >= 0 ? currentDrawingIndex : 0];
-  const currentCalibration = pageCalibrations[currentDrawing.sheetInfo.pageIndex] || {
-    pageIndex: currentDrawing.sheetInfo.pageIndex,
+  const currentDrawing = (sheets && sheets.length > 0)
+    ? (sheets[currentDrawingIndex >= 0 ? currentDrawingIndex : 0] || sheets[0])
+    : null;
+
+  const activeSheetInfo = currentDrawing?.sheetInfo || {
+    id: '',
+    sheetNumber: '—',
+    title: 'No Document Loaded',
+    discipline: 'Architectural' as const,
+    revision: '—',
+    date: new Date().toISOString().slice(0, 10),
+    scale: '1:100',
+    projectName: 'No Document',
+    pageIndex: 0,
+  };
+
+  const currentCalibration = (currentDrawing?.sheetInfo && pageCalibrations[currentDrawing.sheetInfo.pageIndex]) || {
+    pageIndex: currentDrawing?.sheetInfo?.pageIndex ?? 0,
     pixelsPerUnit: 36.67,
     unit: 'm',
-    scaleRatioString: currentDrawing.sheetInfo.scale || '1:100',
+    scaleRatioString: currentDrawing?.sheetInfo?.scale || '1:100',
     isCalibrated: true,
   };
 
   // Filter markups for the current sheet page
-  const pageMarkups = markups.filter((m) => m.pageIndex === currentDrawing.sheetInfo.pageIndex);
+  const pageIndex = currentDrawing?.sheetInfo?.pageIndex ?? 0;
+  const pageMarkups = (markups || []).filter((m) => m.pageIndex === pageIndex);
 
   // Autosave engine with debounce
   useEffect(() => {
@@ -347,7 +371,9 @@ export default function App() {
           sheetIds: sheets.map((s) => s.id),
           updatedAt: new Date().toISOString(),
         };
-        localStorage.setItem('bim_studio_autosave_data', JSON.stringify(payload));
+        if (typeof window !== 'undefined' && window.localStorage) {
+          localStorage.setItem('bim_studio_autosave_data', JSON.stringify(payload));
+        }
         setTimeout(() => {
           setAutosaveStatus('saved');
         }, 500);
@@ -450,68 +476,74 @@ export default function App() {
     setIssues((prev) => prev.map((i) => (i.id === id ? { ...i, status } : i)));
   };
 
-  // Handle PDF Upload
-  const handleUploadPdf = async (file: File) => {
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const pdfjs = await import('pdfjs-dist');
-      const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
-      const pdfDoc = await loadingTask.promise;
-      const numPages = pdfDoc.numPages;
-
-      const newUploadedSheets: SampleDrawing[] = [];
-
-      for (let p = 1; p <= Math.min(numPages, 10); p++) {
-        const page = await pdfDoc.getPage(p);
-        const viewport = page.getViewport({ scale: 1.5 });
-
-        const offscreen = document.createElement('canvas');
-        offscreen.width = viewport.width;
-        offscreen.height = viewport.height;
-        const offCtx = offscreen.getContext('2d');
-        if (offCtx) {
-          await page.render({ canvasContext: offCtx, viewport, canvas: offscreen } as any).promise;
-        }
-
-        const textContent = await page.getTextContent();
-        const extracted = textContent.items
-          .map((item: any) => item.str || '')
-          .join(' ');
-
-        const sheetId = `UPLOAD-P${p}-${Date.now()}`;
-        const sheet: SampleDrawing = {
-          id: sheetId,
-          sheetInfo: {
-            id: sheetId,
-            sheetNumber: `U-${p.toString().padStart(3, '0')}`,
-            title: file.name.replace('.pdf', '') + ` - Page ${p}`,
-            discipline: 'Architectural',
-            revision: 'REV 01',
-            date: new Date().toISOString().slice(0, 10),
-            scale: '1:100',
-            projectName: file.name,
-            pageIndex: sheets.length + p - 1,
-          },
-          width: Math.round(viewport.width),
-          height: Math.round(viewport.height),
-          extractedText: extracted || 'Imported PDF Vector Sheet',
-          render: (ctx, w, h) => {
-            ctx.drawImage(offscreen, 0, 0, w, h);
-          },
-        };
-
-        newUploadedSheets.push(sheet);
-      }
-
-      if (newUploadedSheets.length > 0) {
-        setSheets((prev) => [...newUploadedSheets, ...prev]);
-        setCurrentSheetId(newUploadedSheets[0].id);
-        addToast('PDF Loaded', `Successfully loaded ${newUploadedSheets.length} drawing sheets.`);
-      }
-    } catch (err) {
-      console.error('Failed to parse uploaded PDF:', err);
-      addToast('Upload Failed', 'Could not parse the PDF file.', 'warning');
+  // Handle PDF & Drawing Upload with Choice Prompt
+  const handleRequestOpenPdf = (file: File) => {
+    if (sheets && sheets.length > 0) {
+      setPendingPdfFile(file);
+    } else {
+      handleProcessPdfFile(file, 'replace');
     }
+  };
+
+  const handleProcessPdfFile = async (file: File, mode: 'replace' | 'append') => {
+    setIsProcessingPdf(true);
+    setPdfProgressText('Reading file & rendering vector drawing pages...');
+    try {
+      const startIndex = mode === 'append' ? sheets.length : 0;
+      const newSheets = await loadDrawingFilesAsSheets(file, startIndex, (cur, tot) => {
+        setPdfProgressText(`Rendering page ${cur} of ${tot}...`);
+      });
+
+      if (!newSheets || newSheets.length === 0) {
+        throw new Error('No readable drawing pages found in file.');
+      }
+
+      if (mode === 'replace') {
+        setSheets(newSheets);
+        setCurrentSheetId(newSheets[0].id);
+        addToast(
+          'PDF Opened',
+          `Loaded ${newSheets.length} sheet${newSheets.length === 1 ? '' : 's'} from "${file.name}". Previous drawings replaced.`
+        );
+      } else {
+        setSheets((prev) => [...prev, ...newSheets]);
+        setCurrentSheetId(newSheets[0].id);
+        addToast(
+          'Sheets Added',
+          `Added ${newSheets.length} sheet${newSheets.length === 1 ? '' : 's'} from "${file.name}" to workspace.`
+        );
+      }
+    } catch (err: any) {
+      console.error('Failed to load drawing file:', err);
+      addToast('Failed to Open File', err?.message || 'Could not parse document pages.', 'warning');
+    } finally {
+      setIsProcessingPdf(false);
+      setPendingPdfFile(null);
+    }
+  };
+
+  const handleRemoveSheet = (sheetId: string) => {
+    setSheets((prev) => {
+      const updated = prev.filter((s) => s.id !== sheetId);
+      if (currentSheetId === sheetId) {
+        const nextActive = updated[0];
+        setCurrentSheetId(nextActive ? nextActive.id : '');
+      }
+      return updated;
+    });
+    addToast('Sheet Removed', 'Drawing sheet removed from project.');
+  };
+
+  const handleClearAllSheets = () => {
+    setSheets([]);
+    setCurrentSheetId('');
+    addToast('Workspace Cleared', 'All drawing sheets removed. Workspace is ready for a new document.');
+  };
+
+  const handleRestoreSamples = () => {
+    setSheets(ALL_SAMPLE_DRAWINGS);
+    setCurrentSheetId(ALL_SAMPLE_DRAWINGS[0].id);
+    addToast('Sample BIM Project Loaded', 'Restored 5 architectural and engineering sample sheets.');
   };
 
   // --- EDIT PDF OPERATIONS ---
@@ -811,10 +843,13 @@ ${issues.map((i) => `[${i.id}] ${i.title} (${i.priority}) - Status: ${i.status}`
 
       {/* 1. Main Header with 3 Workspace Modes Switcher */}
       <Header
-        currentSheet={currentDrawing.sheetInfo}
+        currentSheet={activeSheetInfo}
         availableSheets={sheets.map((s) => s.sheetInfo)}
         onSelectSheet={(id) => setCurrentSheetId(id)}
-        onUploadPdf={handleUploadPdf}
+        onUploadPdf={handleRequestOpenPdf}
+        onRemoveCurrentSheet={() => currentDrawing && handleRemoveSheet(currentDrawing.id)}
+        onClearAllSheets={handleClearAllSheets}
+        onReloadSamples={handleRestoreSamples}
         workspaceMode={workspaceMode}
         onSelectWorkspaceMode={(m) => setWorkspaceMode(m)}
         onOpenCompare={() => setIsCompareOpen(true)}
@@ -906,26 +941,47 @@ ${issues.map((i) => `[${i.id}] ${i.title} (${i.priority}) - Status: ${i.status}`
           currentSheetId={currentSheetId}
           onSelectSheet={(id) => setCurrentSheetId(id)}
           onRotateSheet={handleRotatePage}
+          onRemoveSheet={handleRemoveSheet}
+          onClearAllSheets={handleClearAllSheets}
+          onOpenPdfPrompt={() => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.pdf,image/png,image/jpeg,image/webp,image/svg+xml';
+            input.onchange = (e: any) => {
+              if (e.target.files && e.target.files[0]) {
+                handleRequestOpenPdf(e.target.files[0]);
+              }
+            };
+            input.click();
+          }}
+          onReloadSamples={handleRestoreSamples}
         />
 
-        {/* Central High-Performance Technical Drawing Canvas */}
-        <DrawingCanvas
-          currentDrawing={currentDrawing}
-          markups={pageMarkups}
-          onAddMarkup={handleAddMarkup}
-          onUpdateMarkup={handleUpdateMarkup}
-          onDeleteMarkup={handleDeleteMarkup}
-          activeTool={activeTool}
-          colorCategory={colorCategory}
-          strokeWidth={strokeWidth}
-          opacity={opacity}
-          unit={unit}
-          calibration={currentCalibration}
-          onCompleteCalibration={handleCompleteCalibration}
-          snappingEnabled={snappingEnabled}
-          activeCountCategory={activeCountCategory}
-          countCategories={countCategories}
-        />
+        {/* Central Workspace: Canvas or Empty State */}
+        {!currentDrawing ? (
+          <EmptyWorkspace
+            onOpenPdf={handleRequestOpenPdf}
+            onRestoreSamples={handleRestoreSamples}
+          />
+        ) : (
+          <DrawingCanvas
+            currentDrawing={currentDrawing}
+            markups={pageMarkups}
+            onAddMarkup={handleAddMarkup}
+            onUpdateMarkup={handleUpdateMarkup}
+            onDeleteMarkup={handleDeleteMarkup}
+            activeTool={activeTool}
+            colorCategory={colorCategory}
+            strokeWidth={strokeWidth}
+            opacity={opacity}
+            unit={unit}
+            calibration={currentCalibration}
+            onCompleteCalibration={handleCompleteCalibration}
+            snappingEnabled={snappingEnabled}
+            activeCountCategory={activeCountCategory}
+            countCategories={countCategories}
+          />
+        )}
 
         {/* Right AEC Intelligence, Markups, Issues & Takeoff Panel */}
         <RightSidebar
@@ -934,7 +990,7 @@ ${issues.map((i) => `[${i.id}] ${i.title} (${i.priority}) - Status: ${i.status}`
           markups={pageMarkups}
           issues={issues}
           countCategories={countCategories}
-          currentDrawing={currentDrawing}
+          currentDrawing={currentDrawing || ALL_SAMPLE_DRAWINGS[0]}
           onDeleteMarkup={handleDeleteMarkup}
           onAddIssue={handleAddIssue}
           onUpdateIssueStatus={handleUpdateIssueStatus}
@@ -1031,7 +1087,7 @@ ${issues.map((i) => `[${i.id}] ${i.title} (${i.priority}) - Status: ${i.status}`
       <CropModal
         isOpen={isCropOpen}
         onClose={() => setIsCropOpen(false)}
-        currentDrawing={currentDrawing}
+        currentDrawing={currentDrawing || ALL_SAMPLE_DRAWINGS[0]}
         onApplyCrop={handleCropApply}
       />
 
@@ -1039,7 +1095,7 @@ ${issues.map((i) => `[${i.id}] ${i.title} (${i.priority}) - Status: ${i.status}`
       <ResizePagesModal
         isOpen={isResizeOpen}
         onClose={() => setIsResizeOpen(false)}
-        currentDrawing={currentDrawing}
+        currentDrawing={currentDrawing || ALL_SAMPLE_DRAWINGS[0]}
         onApplyResize={handleResizeApply}
       />
 
@@ -1048,7 +1104,9 @@ ${issues.map((i) => `[${i.id}] ${i.title} (${i.priority}) - Status: ${i.status}`
         isOpen={isOrganizeOpen}
         onClose={() => setIsOrganizeOpen(false)}
         sheets={sheets}
+        onUpdateSheets={handleReorderSheets}
         onReorderSheets={handleReorderSheets}
+        onSelectSheet={(id) => setCurrentSheetId(id)}
         onDuplicatePage={handleDuplicatePage}
         onDeletePage={handleDeletePage}
         onRotatePage={handleRotatePage}
@@ -1060,6 +1118,7 @@ ${issues.map((i) => `[${i.id}] ${i.title} (${i.priority}) - Status: ${i.status}`
         isOpen={isSortOpen}
         onClose={() => setIsSortOpen(false)}
         sheets={sheets}
+        onApplySort={handleSortSheets}
         onSortSheets={handleSortSheets}
       />
 
@@ -1068,9 +1127,8 @@ ${issues.map((i) => `[${i.id}] ${i.title} (${i.priority}) - Status: ${i.status}`
         isOpen={isMergeOpen}
         onClose={() => setIsMergeOpen(false)}
         currentSheets={sheets}
-        onMergeComplete={(merged) => {
-          handleReorderSheets(merged);
-          addToast('PDFs Merged', `Successfully merged ${merged.length} sheets.`);
+        onMergeComplete={(mergedName, items) => {
+          addToast('PDFs Merged', `Successfully merged ${items?.length || 4} packages into "${mergedName}".`);
         }}
       />
 
@@ -1079,6 +1137,9 @@ ${issues.map((i) => `[${i.id}] ${i.title} (${i.priority}) - Status: ${i.status}`
         isOpen={isSplitOpen}
         onClose={() => setIsSplitOpen(false)}
         sheets={sheets}
+        onSplit={(mode, details) => {
+          addToast('PDF Split Complete', `Mode: ${mode}. ${details}`);
+        }}
         onSplitComplete={(sets) => {
           addToast('PDF Partitioned', `Split document into ${sets.length} drawing packages.`);
         }}
@@ -1088,7 +1149,10 @@ ${issues.map((i) => `[${i.id}] ${i.title} (${i.priority}) - Status: ${i.status}`
       <CompressPdfModal
         isOpen={isCompressOpen}
         onClose={() => setIsCompressOpen(false)}
-        currentDrawing={currentDrawing}
+        currentDrawing={currentDrawing || ALL_SAMPLE_DRAWINGS[0]}
+        onCompress={(preset, estMb) => {
+          addToast('PDF Compressed', `Optimized sheet Linework (${preset}). Estimated file size: ${estMb.toFixed(1)} MB.`);
+        }}
         onApplyCompression={(preset, estMb) => {
           addToast('PDF Compressed', `Optimized sheet Linework. Estimated file size: ${estMb.toFixed(1)} MB.`);
         }}
@@ -1099,15 +1163,20 @@ ${issues.map((i) => `[${i.id}] ${i.title} (${i.priority}) - Status: ${i.status}`
         isOpen={isPdfToImageOpen}
         onClose={() => setIsPdfToImageOpen(false)}
         sheets={sheets}
+        activeSheetIndex={currentDrawingIndex >= 0 ? currentDrawingIndex : 0}
       />
 
       {/* Image to PDF Conversion Modal */}
       <ImageToPdfModal
         isOpen={isImageToPdfOpen}
         onClose={() => setIsImageToPdfOpen(false)}
+        onGeneratePdf={(fileName, pageCount) => {
+          addToast('PDF Package Generated', `Created "${fileName}" with ${pageCount} photo sheets.`);
+        }}
         onAddSheetsToProject={(newSheets) => {
           setSheets((prev) => [...prev, ...newSheets]);
-          addToast('Images Converted', `Added ${newSheets.length} photo drawing sheets.`);
+          if (newSheets[0]) setCurrentSheetId(newSheets[0].id);
+          addToast('Images Converted', `Added ${newSheets.length} photo drawing sheets to workspace.`);
         }}
       />
 
@@ -1136,7 +1205,7 @@ ${issues.map((i) => `[${i.id}] ${i.title} (${i.priority}) - Status: ${i.status}`
       <DocumentPropertiesModal
         isOpen={isPropertiesOpen}
         onClose={() => setIsPropertiesOpen(false)}
-        currentDrawing={currentDrawing}
+        currentDrawing={currentDrawing || ALL_SAMPLE_DRAWINGS[0]}
         totalPages={sheets.length}
         onSaveProperties={handlePropertiesSave}
       />
@@ -1146,6 +1215,24 @@ ${issues.map((i) => `[${i.id}] ${i.title} (${i.priority}) - Status: ${i.status}`
         isOpen={isFlattenOpen}
         onClose={() => setIsFlattenOpen(false)}
         onConfirmFlatten={handleFlattenApply}
+      />
+
+      {/* Open PDF Modal: Replace vs Append */}
+      <OpenPdfModal
+        isOpen={!!pendingPdfFile}
+        file={pendingPdfFile}
+        currentSheetCount={sheets.length}
+        isProcessing={isProcessingPdf}
+        progressText={pdfProgressText}
+        onClose={() => {
+          if (!isProcessingPdf) setPendingPdfFile(null);
+        }}
+        onConfirmReplace={() => {
+          if (pendingPdfFile) handleProcessPdfFile(pendingPdfFile, 'replace');
+        }}
+        onConfirmAppend={() => {
+          if (pendingPdfFile) handleProcessPdfFile(pendingPdfFile, 'append');
+        }}
       />
     </div>
   );

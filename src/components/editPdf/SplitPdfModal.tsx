@@ -11,7 +11,8 @@ interface SplitPdfModalProps {
   isOpen: boolean;
   onClose: () => void;
   sheets: SampleDrawing[];
-  onSplit: (mode: string, details: string) => void;
+  onSplit?: (mode: string, details: string) => void;
+  onSplitComplete?: (sets: any[]) => void;
 }
 
 export const SplitPdfModal: React.FC<SplitPdfModalProps> = ({
@@ -19,6 +20,7 @@ export const SplitPdfModal: React.FC<SplitPdfModalProps> = ({
   onClose,
   sheets,
   onSplit,
+  onSplitComplete,
 }) => {
   const [splitMode, setSplitMode] = useState<'range' | 'every_n' | 'extract'>('range');
   const [pageRange, setPageRange] = useState('1-2, 3-5');
@@ -44,7 +46,12 @@ export const SplitPdfModal: React.FC<SplitPdfModalProps> = ({
     } else {
       details = `Extracted pages: ${selectedPages.sort((a, b) => a - b).join(', ')}`;
     }
-    onSplit(splitMode, details);
+    if (typeof onSplit === 'function') {
+      onSplit(splitMode, details);
+    }
+    if (typeof onSplitComplete === 'function') {
+      onSplitComplete([{ name: `Split_${splitMode}`, count: selectedPages.length }]);
+    }
     onClose();
   };
 
