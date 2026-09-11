@@ -49,7 +49,7 @@ interface HeaderProps {
   onToggleAiPanel: () => void;
   isAiPanelOpen: boolean;
   autosaveStatus: 'saved' | 'saving' | 'unsaved';
-  onExportPdf: (type?: 'edited' | 'original' | 'flattened' | 'json' | 'report') => void;
+  onExportPdf: (type?: 'edited' | 'original' | 'flattened' | 'all_sheets' | 'json' | 'report') => void;
   onPrint: () => void;
   scaleString: string;
 }
@@ -326,21 +326,29 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         {/* Export Dropdown Menu */}
-        <div className="relative" ref={exportMenuRef}>
-          <button
-            onClick={() => setShowExportMenu((prev) => !prev)}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-lg shadow-sm transition-colors"
-            title="Download & Export Options"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Export</span>
-            <ChevronDown className="w-3 h-3 opacity-80" />
-          </button>
+        <div className="relative flex items-center" ref={exportMenuRef}>
+          <div className="inline-flex rounded-lg shadow-sm bg-blue-600 hover:bg-blue-500 transition-colors divide-x divide-blue-700/60 overflow-hidden">
+            <button
+              onClick={() => onExportPdf('edited')}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700/40 transition-colors"
+              title="Quick Export Active Sheet as PDF"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Export</span>
+            </button>
+            <button
+              onClick={() => setShowExportMenu((prev) => !prev)}
+              className="px-1.5 py-1 text-white hover:bg-blue-700/40 transition-colors flex items-center justify-center"
+              title="Export Options & Formats"
+            >
+              <ChevronDown className="w-3 h-3 opacity-90" />
+            </button>
+          </div>
 
           {showExportMenu && (
-            <div className="absolute right-0 mt-1.5 w-60 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1.5 text-xs text-slate-200 z-50 divide-y divide-slate-800">
+            <div className="absolute right-0 top-full mt-1.5 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1.5 text-xs text-slate-200 z-50 divide-y divide-slate-800">
               <div className="px-3 py-1 text-[10px] uppercase font-bold text-slate-500 tracking-wider">
-                Document Export
+                PDF Document Export
               </div>
               <div className="py-1">
                 <button
@@ -348,13 +356,27 @@ export const Header: React.FC<HeaderProps> = ({
                     onExportPdf('edited');
                     setShowExportMenu(false);
                   }}
-                  className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between"
+                  className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between group"
                 >
                   <div>
-                    <div className="font-semibold text-white">Download Edited PDF</div>
-                    <div className="text-[10px] text-slate-400">With live markup overlay layers</div>
+                    <div className="font-semibold text-white group-hover:text-blue-400 transition-colors">Download Edited PDF</div>
+                    <div className="text-[10px] text-slate-400">Current sheet with live markup layers</div>
                   </div>
                   <Download className="w-3.5 h-3.5 text-blue-400" />
+                </button>
+
+                <button
+                  onClick={() => {
+                    onExportPdf('all_sheets');
+                    setShowExportMenu(false);
+                  }}
+                  className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between group"
+                >
+                  <div>
+                    <div className="font-medium text-emerald-300 group-hover:text-emerald-200 transition-colors">Download All Sheets (Set PDF)</div>
+                    <div className="text-[10px] text-slate-400">Complete multi-page drawing package</div>
+                  </div>
+                  <Download className="w-3.5 h-3.5 text-emerald-400" />
                 </button>
 
                 <button

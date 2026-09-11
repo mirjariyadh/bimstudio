@@ -49,6 +49,7 @@ import {
 } from './types';
 import { ALL_SAMPLE_DRAWINGS, SampleDrawing } from './services/sampleDrawings';
 import { downloadFile } from './services/exportService';
+import { exportPdfDocument } from './services/pdfExportService';
 import { resolveStampVariables } from './services/stampService';
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
 
@@ -824,7 +825,9 @@ export default function App() {
   };
 
   // 15. Export with various types
-  const handleExportPdf = (type: 'edited' | 'original' | 'flattened' | 'json' | 'report' = 'edited') => {
+  const handleExportPdf = async (
+    type: 'edited' | 'original' | 'flattened' | 'all_sheets' | 'json' | 'report' = 'edited'
+  ) => {
     if (!currentDrawing) {
       addToast('No Active Sheet', 'Please open or create a drawing sheet before exporting.', 'warning');
       return;
@@ -832,8 +835,8 @@ export default function App() {
 
     if (type === 'json') {
       const jsonStr = JSON.stringify({ sheet: currentDrawing.sheetInfo, markups: pageMarkups, issues }, null, 2);
-      downloadFile(jsonStr, `${currentDrawing.sheetInfo.sheetNumber}_Markups.json`);
-      addToast('Exported JSON', 'Downloaded markup coordinates and takeoff metadata.');
+      downloadFile(jsonStr, `${currentDrawing.sheetInfo.sheetNumber}_Markups.json`, 'application/json');
+      addToast('Exported JSON', 'Downloaded markup coordinates and takeoff metadata.', 'info');
       return;
     }
 
@@ -842,29 +845,31 @@ export default function App() {
       return;
     }
 
-    const report = `BIM STUDIO - EXPORTED DRAWING SHEET (${type.toUpperCase()})
-=============================================
-Sheet: ${currentDrawing.sheetInfo.sheetNumber} - ${currentDrawing.sheetInfo.title}
-Project: ${currentDrawing.sheetInfo.projectName}
-Revision: ${currentDrawing.sheetInfo.revision}
-Discipline: ${currentDrawing.sheetInfo.discipline}
-Scale: ${currentCalibration.scaleRatioString} (${currentCalibration.pixelsPerUnit.toFixed(1)} px/m)
-Export Mode: ${type}
-Date Exported: ${new Date().toISOString()}
+    try {
+      addToast('Exporting PDF', 'Rendering high-resolution technical sheet to PDF...', 'info');
 
-MARKUPS ON THIS SHEET (${pageMarkups.length}):
-${pageMarkups
-  .map(
-    (m) =>
-      `[${m.id}] ${m.type.toUpperCase()}: ${m.formattedMeasurement || m.text || m.stampText || 'Annotation'} | Author: ${m.author} | Status: ${m.status}`
-  )
-  .join('\n')}
+      const isAllSheets = type === 'all_sheets';
+      const targetSheets = isAllSheets ? sheets : [currentDrawing];
+      const exportMode = type === 'original' ? 'original' : 'edited';
 
-COORDINATION ISSUES (${issues.length}):
-${issues.map((i) => `[${i.id}] ${i.title} (${i.priority}) - Status: ${i.status}`).join('\n')}`;
+      const pdfBlob = await exportPdfDocument({
+        sheets: targetSheets,
+        markups: markups,
+        mode: exportMode,
+        countCategories: countCategories,
+      });
 
-    downloadFile(report, `${currentDrawing.sheetInfo.sheetNumber}_${type}.txt`);
-    addToast('Export Completed', `Downloaded ${type} PDF package for sheet ${currentDrawing.sheetInfo.sheetNumber}`);
+      const cleanSheetNum = (currentDrawing.sheetInfo.sheetNumber || 'Sheet').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const fileName = isAllSheets
+        ? `${(currentDrawing.sheetInfo.projectName || 'DrawingSet').replace(/[^a-zA-Z0-9_-]/g, '_')}_Complete_Set.pdf`
+        : `${cleanSheetNum}_${type}.pdf`;
+
+      downloadFile(pdfBlob, fileName, 'application/pdf');
+      addToast('PDF Export Completed', `Downloaded ${fileName}`);
+    } catch (err) {
+      console.error('PDF export error:', err);
+      addToast('Export Failed', 'Unable to compile PDF document. Please try again.', 'warning');
+    }
   };
 
   // Print
