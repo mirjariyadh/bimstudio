@@ -32,6 +32,7 @@ import { FlattenModal } from './components/editPdf/FlattenModal';
 import { ClearMarkupsModal } from './components/ClearMarkupsModal';
 import { OpenPdfModal } from './components/OpenPdfModal';
 import { EmptyWorkspace } from './components/EmptyWorkspace';
+import { MobileDeviceWarning } from './components/MobileDeviceWarning';
 import { loadDrawingFilesAsSheets } from './services/pdfService';
 import {
   ToolType,
@@ -1138,6 +1139,9 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen w-screen bg-slate-950 text-slate-100 overflow-hidden font-sans relative">
+      {/* Mobile Screen Guidance Notification */}
+      <MobileDeviceWarning />
+
       {/* Hidden File Input for Add Image */}
       <input
         type="file"

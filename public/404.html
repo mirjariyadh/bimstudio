@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>BIM Studio - Redirecting...</title>
+    <script>
+      // Single Page App redirect for GitHub Pages custom domains and subpaths
+      var currentPath = window.location.pathname;
+      var isGitHubPages = window.location.hostname.indexOf('github.io') !== -1;
+      var repoSegment = isGitHubPages ? ('/' + currentPath.split('/')[1] + '/') : '/';
+      window.location.replace(repoSegment);
+    </script>
+  </head>
+  <body style="background:#020617;color:#94a3b8;font-family:sans-serif;display:flex;height:100vh;align-items:center;justify-content:center;">
+    <p>Redirecting to BIM Studio workspace...</p>
+  </body>
+</html>
