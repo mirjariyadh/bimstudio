@@ -191,4 +191,29 @@ export function generatePrintableReportHtml(
 </html>`;
 }
 
+export function exportTakeoffScheduleCsv(
+  categories: Array<{ id: string; name: string; count: number; scheduleCode?: string; unitCost?: number; discipline?: string }>
+): string {
+  const headers = ['Schedule Code', 'Item Name', 'Discipline', 'Quantity (Count)', 'Unit Cost ($)', 'Subtotal ($)'];
+  const rows = categories.map((c) => {
+    const qty = c.count || 0;
+    const unitCost = c.unitCost !== undefined ? c.unitCost : 0;
+    const total = qty * unitCost;
+    return [
+      `"${(c.scheduleCode || c.id.toUpperCase()).replace(/"/g, '""')}"`,
+      `"${c.name.replace(/"/g, '""')}"`,
+      `"${(c.discipline || 'Architectural').replace(/"/g, '""')}"`,
+      qty,
+      unitCost.toFixed(2),
+      total.toFixed(2),
+    ];
+  });
+
+  const totalCost = categories.reduce((sum, c) => sum + (c.count || 0) * (c.unitCost || 0), 0);
+  const totalQty = categories.reduce((sum, c) => sum + (c.count || 0), 0);
+  const summaryRow = ['"TOTAL"', '"All Scheduled Items"', '""', totalQty, '""', totalCost.toFixed(2)];
+
+  return [headers.join(','), ...rows.map((r) => r.join(',')), summaryRow.join(',')].join('\n');
+}
+
 export const generateReviewSummaryHtml = generatePrintableReportHtml;

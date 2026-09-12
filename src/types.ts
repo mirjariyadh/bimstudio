@@ -216,8 +216,11 @@ export interface CountCategory {
   id: string;
   name: string;
   color: string;
-  symbol: string;
+  symbol?: string;
   count: number;
+  scheduleCode?: string;
+  unitCost?: number;
+  discipline?: AECDiscipline;
 }
 
 export interface DrawingSheetInfo {

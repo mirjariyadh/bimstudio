@@ -28,8 +28,11 @@ import {
   Redo2,
   Info,
   Sliders,
+  Plus,
+  DollarSign,
+  Tag,
 } from 'lucide-react';
-import { ToolType, MarkupColorCategory, LengthUnit } from '../types';
+import { ToolType, MarkupColorCategory, LengthUnit, CountCategory } from '../types';
 
 interface AecToolbarProps {
   activeTool: ToolType;
@@ -46,7 +49,9 @@ interface AecToolbarProps {
   onToggleSnapping: () => void;
   activeCountCategory: string;
   onChangeCountCategory: (cat: string) => void;
-  countCategories: Array<{ id: string; name: string; color: string; count: number }>;
+  countCategories: CountCategory[];
+  onUpdateCountCategory?: (id: string, updates: Partial<CountCategory>) => void;
+  onAddCountCategory?: (newCategory: CountCategory) => void;
   onOpenCalibrate: () => void;
   onOpenCustomStampModal?: () => void;
   // Clear All Markups & Undo / Redo
@@ -75,6 +80,8 @@ export const AecToolbar: React.FC<AecToolbarProps> = ({
   activeCountCategory,
   onChangeCountCategory,
   countCategories,
+  onUpdateCountCategory,
+  onAddCountCategory,
   onOpenCalibrate,
   onOpenCustomStampModal,
   currentSheetMarkupCount = 0,
@@ -407,33 +414,114 @@ export const AecToolbar: React.FC<AecToolbarProps> = ({
           </>
         );
 
-      // 4. COUNT TAKEOFF TALLY
-      case 'count':
+      // 4. COUNT TAKEOFF TALLY WITH CUSTOM SCHEDULE INPUTS
+      case 'count': {
+        const activeCat = countCategories.find((c) => c.id === activeCountCategory) || countCategories[0];
+        const subtotal = (activeCat?.count || 0) * (activeCat?.unitCost || 0);
+
         return (
           <>
+            {/* Category Selector */}
             <div className="flex items-center gap-1.5 bg-emerald-950/40 border border-emerald-800/60 px-2 py-0.5 rounded">
-              <span className="text-emerald-400 font-semibold">Tally Category:</span>
+              <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                <Tag className="w-3 h-3" />
+                <span>Schedule Item:</span>
+              </span>
               <select
                 value={activeCountCategory}
                 onChange={(e) => onChangeCountCategory(e.target.value)}
-                className="bg-slate-900 border border-emerald-700/60 text-emerald-200 text-[11px] rounded px-1.5 py-0.5 cursor-pointer font-medium"
+                className="bg-slate-900 border border-emerald-700/60 text-emerald-200 text-[11px] rounded px-1.5 py-0.5 cursor-pointer font-medium max-w-[150px] truncate"
               >
                 {countCategories.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name} ({c.count})
+                    {c.scheduleCode ? `[${c.scheduleCode}] ` : ''}{c.name} ({c.count})
                   </option>
                 ))}
               </select>
             </div>
+
+            {/* Custom Input: Schedule Code */}
+            <div className="flex items-center gap-1 bg-slate-900 border border-slate-700/80 px-2 py-0.5 rounded text-[11px]">
+              <span className="text-slate-400 font-medium">Code:</span>
+              <input
+                type="text"
+                value={activeCat?.scheduleCode || ''}
+                onChange={(e) =>
+                  activeCat && onUpdateCountCategory?.(activeCat.id, { scheduleCode: e.target.value })
+                }
+                placeholder="e.g. DR-101"
+                title="Custom Schedule Code (e.g. DR-101, WD-02, COL-A1)"
+                className="w-20 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-blue-300 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+
+            {/* Custom Input: Unit Cost */}
+            <div className="flex items-center gap-1 bg-slate-900 border border-slate-700/80 px-2 py-0.5 rounded text-[11px]">
+              <span className="text-slate-400 font-medium flex items-center">
+                <DollarSign className="w-3 h-3 text-emerald-400" />
+                <span>Unit Cost:</span>
+              </span>
+              <input
+                type="number"
+                min={0}
+                step={5}
+                value={activeCat?.unitCost ?? ''}
+                onChange={(e) =>
+                  activeCat &&
+                  onUpdateCountCategory?.(activeCat.id, {
+                    unitCost: parseFloat(e.target.value) || 0,
+                  })
+                }
+                placeholder="0.00"
+                title="Unit Cost for estimation schedule"
+                className="w-16 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-emerald-300 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
+
+            {/* Cost Subtotal */}
+            {activeCat && activeCat.unitCost !== undefined && activeCat.unitCost > 0 && (
+              <div className="hidden lg:flex items-center gap-1 px-2 py-0.5 bg-emerald-950/50 border border-emerald-800/40 rounded text-[11px] font-mono text-emerald-300">
+                <span className="text-slate-400 font-sans text-[10px]">Subtotal:</span>
+                <span className="font-bold">${subtotal.toLocaleString()}</span>
+              </div>
+            )}
+
+            {/* Quick Add Custom Schedule Category */}
+            {onAddCountCategory && (
+              <button
+                type="button"
+                onClick={() => {
+                  const name = window.prompt('Enter custom schedule item name (e.g. Fire Extinguisher, Exit Sign, Motorized Damper):');
+                  if (!name || !name.trim()) return;
+                  const code = window.prompt('Enter Schedule Code (e.g. FE-01, EX-20, MD-101):', 'SCH-' + String(Date.now()).slice(-3)) || '';
+                  const costStr = window.prompt('Enter Unit Cost in $:', '150');
+                  const cost = parseFloat(costStr || '0') || 0;
+                  const newId = `cat-${Date.now()}`;
+                  onAddCountCategory({
+                    id: newId,
+                    name: name.trim(),
+                    scheduleCode: code.trim(),
+                    unitCost: cost,
+                    color: '#10b981',
+                    symbol: 'circle',
+                    count: 0,
+                    discipline: 'Architectural',
+                  });
+                }}
+                className="flex items-center gap-1 px-2 py-1 bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/40 rounded text-[10px] font-semibold transition-colors cursor-pointer"
+                title="Create a new custom scheduled takeoff category"
+              >
+                <Plus className="w-3 h-3" />
+                <span>+ Schedule Item</span>
+              </button>
+            )}
+
             {renderColorCategoryPicker('Tag Color')}
             {renderLineWeightSelector([1, 2, 3], 'Pin Size:')}
             {renderOpacitySelector([1, 0.8, 0.6])}
-            <div className="hidden xl:flex items-center gap-1 text-[10px] text-emerald-400/80 italic pl-2 border-l border-slate-800">
-              <Info className="w-3 h-3 text-emerald-400" />
-              <span>Click sheet to place numbered pin marker</span>
-            </div>
           </>
         );
+      }
 
       // 5. REVISION CLOUD
       case 'revision_cloud':

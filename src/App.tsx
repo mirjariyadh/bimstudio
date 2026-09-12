@@ -248,15 +248,26 @@ export default function App() {
   // Hidden Image File Input
   const imageInputRef = useRef<HTMLInputElement>(null);
 
-  // Takeoff count categories
+  // Takeoff count categories with AEC schedule metadata
   const [activeCountCategory, setActiveCountCategory] = useState<string>('doors');
   const [countCategories, setCountCategories] = useState<CountCategory[]>([
-    { id: 'doors', name: 'Doors & Openings', color: '#3b82f6', count: 2 },
-    { id: 'windows', name: 'Curtain Wall / Windows', color: '#06b6d4', count: 4 },
-    { id: 'columns', name: 'Structural Columns', color: '#eab308', count: 6 },
-    { id: 'diffusers', name: 'HVAC Air Diffusers', color: '#10b981', count: 8 },
-    { id: 'fixtures', name: 'Plumbing Fixtures', color: '#a855f7', count: 3 },
+    { id: 'doors', name: 'Doors & Openings', color: '#3b82f6', count: 2, scheduleCode: 'DR-101', unitCost: 450, discipline: 'Architectural' },
+    { id: 'windows', name: 'Curtain Wall / Windows', color: '#06b6d4', count: 4, scheduleCode: 'WD-201', unitCost: 650, discipline: 'Architectural' },
+    { id: 'columns', name: 'Structural Columns', color: '#eab308', count: 6, scheduleCode: 'COL-C1', unitCost: 1250, discipline: 'Structural' },
+    { id: 'diffusers', name: 'HVAC Air Diffusers', color: '#10b981', count: 8, scheduleCode: 'DIFF-A', unitCost: 95, discipline: 'Mechanical' },
+    { id: 'fixtures', name: 'Plumbing Fixtures', color: '#a855f7', count: 3, scheduleCode: 'PL-WC', unitCost: 320, discipline: 'Plumbing' },
   ]);
+
+  const handleUpdateCountCategory = (id: string, updates: Partial<CountCategory>) => {
+    setCountCategories((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, ...updates } : c))
+    );
+  };
+
+  const handleAddCountCategory = (newCat: CountCategory) => {
+    setCountCategories((prev) => [...prev, newCat]);
+    setActiveCountCategory(newCat.id);
+  };
 
   // Markups & BIM Issues
   const [markups, setMarkups] = useState<MarkupItem[]>(INITIAL_MARKUPS);
@@ -1216,6 +1227,8 @@ export default function App() {
           activeCountCategory={activeCountCategory}
           onChangeCountCategory={(cat) => setActiveCountCategory(cat)}
           countCategories={countCategories}
+          onUpdateCountCategory={handleUpdateCountCategory}
+          onAddCountCategory={handleAddCountCategory}
           onOpenCalibrate={() => setIsCalibrateOpen(true)}
           onOpenCustomStampModal={() => setIsCustomStampOpen(true)}
           currentSheetMarkupCount={pageMarkups.length}
@@ -1305,6 +1318,8 @@ export default function App() {
           onDeleteMarkup={handleDeleteMarkup}
           onAddIssue={handleAddIssue}
           onUpdateIssueStatus={handleUpdateIssueStatus}
+          onUpdateCountCategory={handleUpdateCountCategory}
+          onAddCountCategory={handleAddCountCategory}
         />
       </div>
 

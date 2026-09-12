@@ -14,6 +14,7 @@ import {
   Check,
   X,
   Compass,
+  Edit3,
 } from 'lucide-react';
 import {
   ToolType,
@@ -44,20 +45,90 @@ const isPointNearMarkup = (m: MarkupItem, pos: Point, zoom: number): boolean => 
     return true;
   }
 
-  // 2. Single-point items (stamp, count, textbox origin)
+  // 2. Circle / Ellipse: select anywhere on circumference OR inside circle
+  if (m.type === 'circle' && m.points.length >= 2) {
+    const [p1, p2] = m.points;
+    const r = calculateDistance(p1, p2);
+    const distToCenter = calculateDistance(pos, p1);
+    if (distToCenter <= r + threshold) {
+      return true;
+    }
+  }
+
+  // 3. Callout: arrow tip, leader line, or text bubble
+  if (m.type === 'callout' && m.points.length >= 1) {
+    const p1 = m.points[0];
+    const p2 = m.points.length >= 2 ? m.points[1] : (m.calloutLeaderEnd || { x: p1.x + 80, y: p1.y - 50 });
+    if (calculateDistance(pos, p1) < threshold) return true;
+    if (calculateDistance(pos, p2) < threshold) return true;
+
+    // Leader line segment
+    const l2 = (p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2;
+    if (l2 > 0) {
+      const t = Math.max(0, Math.min(1, ((pos.x - p1.x) * (p2.x - p1.x) + (pos.y - p1.y) * (p2.y - p1.y)) / l2));
+      const proj = { x: p1.x + t * (p2.x - p1.x), y: p1.y + t * (p2.y - p1.y) };
+      if (calculateDistance(pos, proj) < threshold) return true;
+    }
+
+    // Text bubble card
+    const textLen = (m.text || 'Callout Note').length;
+    const bw = Math.max(80, textLen * 9 + 20);
+    const isLeft = p2.x < p1.x;
+    const cardX = isLeft ? p2.x - bw : p2.x;
+    if (
+      pos.x >= cardX - threshold &&
+      pos.x <= cardX + bw + threshold &&
+      pos.y >= p2.y - 28 - threshold &&
+      pos.y <= p2.y + 12 + threshold
+    ) {
+      return true;
+    }
+  }
+
+  // 4. Sticky note: 150x100 card hit box
+  if (m.type === 'stickynote' && m.points.length >= 1) {
+    const p = m.points[0];
+    if (
+      pos.x >= p.x - threshold &&
+      pos.x <= p.x + 150 + threshold &&
+      pos.y >= p.y - threshold &&
+      pos.y <= p.y + 100 + threshold
+    ) {
+      return true;
+    }
+  }
+
+  // 5. Textbox hit box
+  if (m.type === 'textbox' && m.points.length >= 1) {
+    const p = m.points[0];
+    const textLen = (m.text || 'Text Note').length;
+    const tw = Math.max(60, textLen * 9 + 24);
+    if (
+      pos.x >= p.x - 8 - threshold &&
+      pos.x <= p.x + tw + threshold &&
+      pos.y >= p.y - 22 - threshold &&
+      pos.y <= p.y + 16 + threshold
+    ) {
+      return true;
+    }
+  }
+
+  // 6. Single-point items (stamp, count)
   if (m.points.length === 1) {
     const p = m.points[0];
-    const w = m.type === 'stamp' ? 140 : m.type === 'count' ? 44 : 160;
-    const h = m.type === 'stamp' ? 50 : m.type === 'count' ? 44 : 60;
-    return (
+    const w = m.type === 'stamp' ? 160 : 44;
+    const h = m.type === 'stamp' ? 50 : 44;
+    if (
       pos.x >= p.x - w / 2 - threshold &&
       pos.x <= p.x + w / 2 + threshold &&
       pos.y >= p.y - h / 2 - threshold &&
       pos.y <= p.y + h / 2 + threshold
-    );
+    ) {
+      return true;
+    }
   }
 
-  // 3. Multi-point bounding box check for closed shapes (rect, area, cloud, note)
+  // 7. Multi-point bounding box check for closed shapes (rect, area, cloud)
   const xs = m.points.map((p) => p.x);
   const ys = m.points.map((p) => p.y);
   const minX = Math.min(...xs);
@@ -66,7 +137,7 @@ const isPointNearMarkup = (m: MarkupItem, pos: Point, zoom: number): boolean => 
   const maxY = Math.max(...ys);
 
   if (
-    ['rectangle', 'area', 'revision_cloud', 'textbox', 'callout', 'note'].includes(m.type) &&
+    ['rectangle', 'area', 'revision_cloud', 'note'].includes(m.type) &&
     pos.x >= minX - threshold &&
     pos.x <= maxX + threshold &&
     pos.y >= minY - threshold &&
@@ -75,7 +146,7 @@ const isPointNearMarkup = (m: MarkupItem, pos: Point, zoom: number): boolean => 
     return true;
   }
 
-  // 4. Line segment proximity for lines, dimensions, distance, polyline, pen
+  // 8. Line segment proximity for lines, dimensions, distance, polyline, pen, highlighter
   for (let i = 0; i < m.points.length - 1; i++) {
     const p1 = m.points[i];
     const p2 = m.points[i + 1];
@@ -178,11 +249,12 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     return () => window.removeEventListener('keydown', handleCanvasKeyDown);
   }, [selectedMarkupId, onDeleteMarkup]);
 
-  // Text input dialog for Text / Sticky Note / Callout
-  const [textModalOpen, setTextModalOpen] = useState(false);
-  const [textModalPos, setTextModalPos] = useState<Point>({ x: 0, y: 0 });
-  const [pendingText, setPendingText] = useState('');
-  const [pendingMarkupType, setPendingMarkupType] = useState<ToolType>('textbox');
+  // Callout dragging mode: dragging the arrow tip, the text bubble, or the whole callout
+  const [calloutDragMode, setCalloutDragMode] = useState<'arrow' | 'text' | 'body' | null>(null);
+
+  // Edit existing or placed markup text/comment (Text / Sticky Note / Callout / Cloud)
+  const [editingMarkupId, setEditingMarkupId] = useState<string | null>(null);
+  const [editTextValue, setEditTextValue] = useState('');
 
   const COLOR_HEX: Record<MarkupColorCategory, string> = {
     red: '#dc2626',
@@ -514,24 +586,58 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         case 'callout': {
           if (m.points.length >= 1) {
             const p = m.points[0];
-            const end = m.calloutLeaderEnd || { x: p.x + 60, y: p.y - 40 };
+            const end = m.points.length >= 2 ? m.points[1] : (m.calloutLeaderEnd || { x: p.x + 80, y: p.y - 50 });
 
+            // Leader line from arrow tip to text shoulder
             ctx.beginPath();
             ctx.moveTo(p.x, p.y);
             ctx.lineTo(end.x, end.y);
-            ctx.lineTo(end.x + 80, end.y);
             ctx.stroke();
 
-            // Arrow tip at p
-            ctx.fillStyle = m.strokeColor;
+            // Arrow tip at p pointing towards p (from end)
+            const angle = Math.atan2(p.y - end.y, p.x - end.x);
+            const headLen = 13;
             ctx.beginPath();
-            ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(
+              p.x - headLen * Math.cos(angle - Math.PI / 6),
+              p.y - headLen * Math.sin(angle - Math.PI / 6)
+            );
+            ctx.lineTo(
+              p.x - headLen * Math.cos(angle + Math.PI / 6),
+              p.y - headLen * Math.sin(angle + Math.PI / 6)
+            );
+            ctx.closePath();
+            ctx.fillStyle = m.strokeColor;
             ctx.fill();
 
-            // Text
+            // Horizontal landing shoulder & callout bubble card
             ctx.font = 'bold 12px Inter, sans-serif';
+            const txt = m.text || 'Callout Note';
+            const tw = ctx.measureText(txt).width;
+            const shoulderWidth = Math.max(75, tw + 16);
+            const isLeft = end.x < p.x;
+            const shoulderEndX = isLeft ? end.x - shoulderWidth : end.x + shoulderWidth;
+
+            // Draw landing line
+            ctx.beginPath();
+            ctx.moveTo(end.x, end.y);
+            ctx.lineTo(shoulderEndX, end.y);
+            ctx.stroke();
+
+            // Bubble card
+            const cardX = isLeft ? shoulderEndX : end.x;
+            const cardY = end.y - 24;
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(cardX, cardY, shoulderWidth, 22);
+            ctx.strokeStyle = m.strokeColor;
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(cardX, cardY, shoulderWidth, 22);
+
             ctx.fillStyle = '#0f172a';
-            ctx.fillText(m.text || 'Callout Note', end.x + 6, end.y - 6);
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(txt, cardX + 8, end.y - 13);
           }
           break;
         }
@@ -540,16 +646,19 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
           if (m.points.length >= 1) {
             const p = m.points[0];
             ctx.font = `${m.fontSize || 14}px Inter, sans-serif`;
-            const text = m.text || 'Text';
+            const text = m.text || 'Text Note';
             const tw = ctx.measureText(text).width;
 
             ctx.fillStyle = '#ffffff';
-            ctx.fillRect(p.x - 4, p.y - 14, tw + 8, 22);
+            ctx.fillRect(p.x - 6, p.y - 18, tw + 12, 26);
             ctx.strokeStyle = m.strokeColor;
-            ctx.strokeRect(p.x - 4, p.y - 14, tw + 8, 22);
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(p.x - 6, p.y - 18, tw + 12, 26);
 
             ctx.fillStyle = m.strokeColor;
-            ctx.fillText(text, p.x, p.y + 2);
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, p.x, p.y - 5);
           }
           break;
         }
@@ -557,20 +666,64 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         case 'stickynote': {
           if (m.points.length >= 1) {
             const p = m.points[0];
+            const w = 150;
+            const h = 100;
+
+            // Shadow
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+            ctx.fillRect(p.x + 3, p.y + 3, w, h);
+
+            // Post-it yellow background
             ctx.fillStyle = '#fef08a';
             ctx.strokeStyle = '#eab308';
             ctx.lineWidth = 1.5;
-            ctx.fillRect(p.x, p.y, 140, 90);
-            ctx.strokeRect(p.x, p.y, 140, 90);
+            ctx.fillRect(p.x, p.y, w, h);
+            ctx.strokeRect(p.x, p.y, w, h);
 
+            // Folded bottom-right corner effect
+            ctx.fillStyle = '#fde047';
+            ctx.beginPath();
+            ctx.moveTo(p.x + w - 16, p.y + h);
+            ctx.lineTo(p.x + w, p.y + h - 16);
+            ctx.lineTo(p.x + w - 16, p.y + h - 16);
+            ctx.closePath();
+            ctx.fill();
+
+            // Header strip
+            ctx.fillStyle = '#facc15';
+            ctx.fillRect(p.x, p.y, w, 22);
+
+            // Author / Title
             ctx.fillStyle = '#854d0e';
             ctx.font = 'bold 10px Inter, sans-serif';
-            ctx.fillText(`NOTE BY ${m.author}`, p.x + 8, p.y + 16);
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`STICKY NOTE • ${m.author || 'Reviewer'}`, p.x + 8, p.y + 11);
 
+            // Body text
             ctx.fillStyle = '#1e293b';
             ctx.font = '11px Inter, sans-serif';
+            ctx.textBaseline = 'top';
             const txt = m.text || 'Review comment';
-            ctx.fillText(txt.slice(0, 35), p.x + 8, p.y + 36);
+
+            // Text wrapping for sticky note
+            const maxCharsPerLine = 22;
+            const words = txt.split(' ');
+            const lines: string[] = [];
+            let cur = '';
+            for (const word of words) {
+              if ((cur + ' ' + word).trim().length <= maxCharsPerLine) {
+                cur = (cur + ' ' + word).trim();
+              } else {
+                if (cur) lines.push(cur);
+                cur = word;
+              }
+            }
+            if (cur) lines.push(cur);
+
+            lines.slice(0, 4).forEach((line, idx) => {
+              ctx.fillText(line, p.x + 8, p.y + 28 + idx * 16);
+            });
           }
           break;
         }
@@ -640,17 +793,49 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         }
       }
 
-      // Selection bounding highlight
+      // Selection bounding highlight & control handles
       if (isSelected && m.points.length > 0) {
         let minX = Infinity;
         let minY = Infinity;
         let maxX = -Infinity;
         let maxY = -Infinity;
 
-        if (m.points.length === 1) {
+        if (m.type === 'circle' && m.points.length >= 2) {
+          const [p1, p2] = m.points;
+          const r = calculateDistance(p1, p2);
+          minX = p1.x - r;
+          maxX = p1.x + r;
+          minY = p1.y - r;
+          maxY = p1.y + r;
+        } else if (m.type === 'stickynote') {
           const pt = m.points[0];
-          const w = m.type === 'stamp' ? 160 : m.type === 'count' ? 44 : 140;
-          const h = m.type === 'stamp' ? 50 : m.type === 'count' ? 44 : 50;
+          minX = pt.x;
+          maxX = pt.x + 150;
+          minY = pt.y;
+          maxY = pt.y + 100;
+        } else if (m.type === 'textbox') {
+          const pt = m.points[0];
+          const textLen = (m.text || 'Text Note').length;
+          const tw = Math.max(60, textLen * 9 + 24);
+          minX = pt.x - 8;
+          maxX = pt.x + tw;
+          minY = pt.y - 20;
+          maxY = pt.y + 12;
+        } else if (m.type === 'callout') {
+          const p1 = m.points[0];
+          const p2 = m.points.length >= 2 ? m.points[1] : (m.calloutLeaderEnd || { x: p1.x + 80, y: p1.y - 50 });
+          const textLen = (m.text || 'Callout Note').length;
+          const bw = Math.max(80, textLen * 9 + 20);
+          const isLeft = p2.x < p1.x;
+          const cardX = isLeft ? p2.x - bw : p2.x;
+          minX = Math.min(p1.x, cardX);
+          maxX = Math.max(p1.x, cardX + bw);
+          minY = Math.min(p1.y, p2.y - 28);
+          maxY = Math.max(p1.y, p2.y + 12);
+        } else if (m.points.length === 1) {
+          const pt = m.points[0];
+          const w = m.type === 'stamp' ? 160 : 44;
+          const h = m.type === 'stamp' ? 50 : 44;
           minX = pt.x - w / 2;
           maxX = pt.x + w / 2;
           minY = pt.y - h / 2;
@@ -682,6 +867,30 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         corners.forEach((c) => {
           ctx.fillRect(c.x - 3, c.y - 3, 6, 6);
         });
+
+        // Callout Interactive Control Handles: Arrow Tip (Blue) & Text Shoulder (Amber)
+        if (m.type === 'callout') {
+          const p1 = m.points[0];
+          const p2 = m.points.length >= 2 ? m.points[1] : (m.calloutLeaderEnd || { x: p1.x + 80, y: p1.y - 50 });
+
+          // Arrow tip handle
+          ctx.fillStyle = '#3b82f6';
+          ctx.beginPath();
+          ctx.arc(p1.x, p1.y, 6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          // Text position handle
+          ctx.fillStyle = '#f59e0b';
+          ctx.beginPath();
+          ctx.arc(p2.x, p2.y, 6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
       }
 
       ctx.restore();
@@ -762,6 +971,102 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         ctx.fillStyle = '#4ade80';
         ctx.textAlign = 'left';
         ctx.fillText(label, pCurrent.x + 14, pCurrent.y + 4);
+      } else if (activeTool === 'circle') {
+        // Circle / Ellipse rubber-band preview with radius readout
+        const r = calculateDistance(p1, pCurrent);
+        ctx.beginPath();
+        ctx.arc(p1.x, p1.y, r, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Dashed radius guide
+        ctx.save();
+        ctx.setLineDash([3, 3]);
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(pCurrent.x, pCurrent.y);
+        ctx.stroke();
+        ctx.restore();
+
+        // Center point dot
+        ctx.beginPath();
+        ctx.arc(p1.x, p1.y, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Radius readout badge
+        const realR = pixelsToRealDistance(r, calibration);
+        const label = `Radius: ${formatDistance(realR, unit)}`;
+        ctx.font = 'bold 11px Inter, monospace';
+        const tw = ctx.measureText(label).width;
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(pCurrent.x + 8, pCurrent.y - 12, tw + 12, 22);
+        ctx.fillStyle = '#38bdf8';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText(label, pCurrent.x + 14, pCurrent.y + 4);
+      } else if (activeTool === 'callout') {
+        // Callout rubber-band preview: arrow pointing at p1, line to pCurrent, horizontal landing
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(pCurrent.x, pCurrent.y);
+        const isLeft = pCurrent.x < p1.x;
+        const shoulderEnd = isLeft ? pCurrent.x - 70 : pCurrent.x + 70;
+        ctx.lineTo(shoulderEnd, pCurrent.y);
+        ctx.stroke();
+
+        // Arrowhead at p1
+        const angle = Math.atan2(p1.y - pCurrent.y, p1.x - pCurrent.x);
+        const headLen = 13;
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(
+          p1.x - headLen * Math.cos(angle - Math.PI / 6),
+          p1.y - headLen * Math.sin(angle - Math.PI / 6)
+        );
+        ctx.lineTo(
+          p1.x - headLen * Math.cos(angle + Math.PI / 6),
+          p1.y - headLen * Math.sin(angle + Math.PI / 6)
+        );
+        ctx.closePath();
+        ctx.fillStyle = currentColorHex;
+        ctx.fill();
+
+        // Preview text box
+        const cardX = isLeft ? shoulderEnd : pCurrent.x;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(cardX, pCurrent.y - 22, 70, 20);
+        ctx.strokeStyle = currentColorHex;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(cardX, pCurrent.y - 22, 70, 20);
+        ctx.fillStyle = '#0f172a';
+        ctx.font = 'bold 10px Inter, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Note text', cardX + 6, pCurrent.y - 12);
+      } else if (activeTool === 'pen' || activeTool === 'highlighter') {
+        // Freehand pen & highlighter real-time live preview while dragging
+        ctx.save();
+        if (activeTool === 'highlighter') {
+          ctx.strokeStyle = currentColorHex;
+          ctx.lineWidth = Math.max(strokeWidth, 18);
+          ctx.globalAlpha = 0.35;
+          ctx.lineCap = 'square';
+          ctx.lineJoin = 'round';
+        } else {
+          ctx.strokeStyle = currentColorHex;
+          ctx.lineWidth = strokeWidth;
+          ctx.globalAlpha = opacity;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+        }
+        ctx.beginPath();
+        ctx.moveTo(currentPoints[0].x, currentPoints[0].y);
+        for (let i = 1; i < currentPoints.length; i++) {
+          ctx.lineTo(currentPoints[i].x, currentPoints[i].y);
+        }
+        ctx.stroke();
+        ctx.restore();
       } else if (activeTool === 'revision_cloud' || activeTool === 'rectangle') {
         const rx = Math.min(p1.x, pCurrent.x);
         const ry = Math.min(p1.y, pCurrent.y);
@@ -827,8 +1132,25 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         setSelectedMarkupId(hit.id);
         setIsDraggingMarkup(true);
         setDragStartPos(pos);
+
+        if (hit.type === 'callout' && hit.points.length >= 1) {
+          const p1 = hit.points[0];
+          const p2 = hit.points.length >= 2 ? hit.points[1] : (hit.calloutLeaderEnd || { x: p1.x + 80, y: p1.y - 50 });
+          const distArrow = calculateDistance(pos, p1);
+          const distText = calculateDistance(pos, p2);
+          if (distArrow < 16) {
+            setCalloutDragMode('arrow');
+          } else if (distText < 28) {
+            setCalloutDragMode('text');
+          } else {
+            setCalloutDragMode('body');
+          }
+        } else {
+          setCalloutDragMode(null);
+        }
       } else {
         setSelectedMarkupId(null);
+        setCalloutDragMode(null);
       }
       return;
     }
@@ -876,12 +1198,86 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       return;
     }
 
-    // Text Box / Sticky Note: open inline text input
-    if (activeTool === 'textbox' || activeTool === 'stickynote' || activeTool === 'callout') {
-      setPendingMarkupType(activeTool);
-      setTextModalPos(pos);
-      setPendingText(activeTool === 'callout' ? 'REV 03 - Verify clearance' : '');
-      setTextModalOpen(true);
+    // Text Box: place immediately at click location, select and open inline edit modal
+    if (activeTool === 'textbox') {
+      const newId = `M-${String(markups.length + 1).padStart(3, '0')}`;
+      const defaultText = 'Text Note';
+      onAddMarkup({
+        id: newId,
+        pageIndex: currentDrawing.sheetInfo.pageIndex,
+        type: 'textbox',
+        author: 'Architect',
+        createdAt: new Date().toISOString(),
+        colorCategory,
+        strokeColor: currentColorHex,
+        strokeWidth: 1.5,
+        opacity: 1,
+        points: [pos],
+        text: defaultText,
+        status: 'Open',
+        discipline: currentDrawing.sheetInfo.discipline,
+      });
+      setSelectedMarkupId(newId);
+      setEditingMarkupId(newId);
+      setEditTextValue(defaultText);
+      return;
+    }
+
+    // Sticky Note: place immediately at click location, select and open inline edit modal
+    if (activeTool === 'stickynote') {
+      const newId = `M-${String(markups.length + 1).padStart(3, '0')}`;
+      const defaultText = 'Review comment';
+      onAddMarkup({
+        id: newId,
+        pageIndex: currentDrawing.sheetInfo.pageIndex,
+        type: 'stickynote',
+        author: 'Architect',
+        createdAt: new Date().toISOString(),
+        colorCategory,
+        strokeColor: '#eab308',
+        strokeWidth: 1.5,
+        opacity: 1,
+        points: [pos],
+        text: defaultText,
+        status: 'Open',
+        discipline: currentDrawing.sheetInfo.discipline,
+      });
+      setSelectedMarkupId(newId);
+      setEditingMarkupId(newId);
+      setEditTextValue(defaultText);
+      return;
+    }
+
+    // Callout: 2-click interactive workflow (Click 1 = arrow tip, Click 2 = text position)
+    if (activeTool === 'callout') {
+      if (currentPoints.length === 0) {
+        setCurrentPoints([pos]);
+      } else {
+        const p1 = currentPoints[0];
+        const p2 = pos;
+        const newId = `M-${String(markups.length + 1).padStart(3, '0')}`;
+        const defaultText = 'Callout Note';
+        onAddMarkup({
+          id: newId,
+          pageIndex: currentDrawing.sheetInfo.pageIndex,
+          type: 'callout',
+          author: 'Architect',
+          createdAt: new Date().toISOString(),
+          colorCategory,
+          strokeColor: currentColorHex,
+          strokeWidth,
+          opacity,
+          points: [p1, p2],
+          calloutLeaderEnd: p2,
+          text: defaultText,
+          status: 'Open',
+          discipline: currentDrawing.sheetInfo.discipline,
+        });
+        setCurrentPoints([]);
+        setSelectedMarkupId(newId);
+        setEditingMarkupId(newId);
+        setEditTextValue(defaultText);
+      }
       return;
     }
 
@@ -932,7 +1328,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       return;
     }
 
-    // Revision Cloud & Rectangle & Circle: 2-click flow
+    // Revision Cloud & Rectangle & Circle & Arrow: 2-click flow
     if (
       activeTool === 'revision_cloud' ||
       activeTool === 'rectangle' ||
@@ -965,7 +1361,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       return;
     }
 
-    // Freehand pen
+    // Freehand pen & highlighter
     if (activeTool === 'pen' || activeTool === 'highlighter') {
       setCurrentPoints([pos]);
     }
@@ -999,11 +1395,35 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       const dy = rawPos.y - dragStartPos.y;
       const target = markups.find((m) => m.id === selectedMarkupId);
       if (target) {
-        const movedPoints = target.points.map((p) => ({
-          x: p.x + dx,
-          y: p.y + dy,
-        }));
-        onUpdateMarkup(selectedMarkupId, { points: movedPoints });
+        if (target.type === 'callout') {
+          const p1 = target.points[0];
+          const p2 = target.points.length >= 2 ? target.points[1] : (target.calloutLeaderEnd || { x: p1.x + 80, y: p1.y - 50 });
+          if (calloutDragMode === 'text') {
+            const newP2 = { x: p2.x + dx, y: p2.y + dy };
+            onUpdateMarkup(selectedMarkupId, {
+              points: [p1, newP2],
+              calloutLeaderEnd: newP2,
+            });
+          } else if (calloutDragMode === 'arrow') {
+            const newP1 = { x: p1.x + dx, y: p1.y + dy };
+            onUpdateMarkup(selectedMarkupId, {
+              points: [newP1, p2],
+            });
+          } else {
+            const newP1 = { x: p1.x + dx, y: p1.y + dy };
+            const newP2 = { x: p2.x + dx, y: p2.y + dy };
+            onUpdateMarkup(selectedMarkupId, {
+              points: [newP1, newP2],
+              calloutLeaderEnd: newP2,
+            });
+          }
+        } else {
+          const movedPoints = target.points.map((p) => ({
+            x: p.x + dx,
+            y: p.y + dy,
+          }));
+          onUpdateMarkup(selectedMarkupId, { points: movedPoints });
+        }
         setDragStartPos(rawPos);
       }
     }
@@ -1015,6 +1435,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     }
     if (isDraggingMarkup) {
       setIsDraggingMarkup(false);
+      setCalloutDragMode(null);
     }
 
     // Interactive Scale Calibration: complete on drag-release if dragged distance > 10px
@@ -1046,11 +1467,24 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         discipline: currentDrawing.sheetInfo.discipline,
       });
       setCurrentPoints([]);
+    } else if ((activeTool === 'pen' || activeTool === 'highlighter') && currentPoints.length <= 1) {
+      setCurrentPoints([]);
     }
   };
 
-  // Double click finishes polyline or polygon area
-  const handleDoubleClick = () => {
+  // Double click finishes polyline / area or opens text edit on selected markup
+  const handleDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (activeTool === 'select') {
+      const rawPos = screenToDrawing(e.clientX, e.clientY);
+      const hit = markups.find((m) => isPointNearMarkup(m, rawPos, zoom));
+      if (hit && ['callout', 'textbox', 'stickynote', 'revision_cloud'].includes(hit.type)) {
+        setSelectedMarkupId(hit.id);
+        setEditingMarkupId(hit.id);
+        setEditTextValue(hit.text || '');
+        return;
+      }
+    }
+
     if (activeTool === 'polyline' && currentPoints.length >= 2) {
       const totPx = calculatePolylineLength(currentPoints);
       const realLen = pixelsToRealDistance(totPx, calibration);
@@ -1147,35 +1581,15 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     });
   };
 
-  // Save Text Modal
-  const handleSaveTextMarkup = () => {
-    if (!pendingText.trim()) {
-      setTextModalOpen(false);
-      return;
+  // Save edited markup text
+  const handleSaveEditedText = () => {
+    if (editingMarkupId) {
+      onUpdateMarkup(editingMarkupId, {
+        text: editTextValue.trim() || 'Note',
+      });
+      setEditingMarkupId(null);
+      setEditTextValue('');
     }
-
-    onAddMarkup({
-      id: `M-${String(markups.length + 1).padStart(3, '0')}`,
-      pageIndex: currentDrawing.sheetInfo.pageIndex,
-      type: pendingMarkupType,
-      author: 'Architect',
-      createdAt: new Date().toISOString(),
-      colorCategory,
-      strokeColor: currentColorHex,
-      strokeWidth,
-      opacity,
-      points: [textModalPos],
-      text: pendingText,
-      calloutLeaderEnd:
-        pendingMarkupType === 'callout'
-          ? { x: textModalPos.x + 80, y: textModalPos.y - 50 }
-          : undefined,
-      status: 'Open',
-      discipline: currentDrawing.sheetInfo.discipline,
-    });
-
-    setTextModalOpen(false);
-    setPendingText('');
   };
 
   return (
@@ -1251,6 +1665,27 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             >
               <Copy className="w-4 h-4" />
             </button>
+            {['textbox', 'stickynote', 'callout', 'revision_cloud'].includes(
+              markups.find((m) => m.id === selectedMarkupId)?.type || ''
+            ) && (
+              <button
+                type="button"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const target = markups.find((m) => m.id === selectedMarkupId);
+                  if (target) {
+                    setEditingMarkupId(target.id);
+                    setEditTextValue(target.text || '');
+                  }
+                }}
+                title="Edit Text Content"
+                className="flex items-center gap-1 px-2 py-1 bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 hover:text-white rounded-lg transition-colors cursor-pointer border border-blue-500/40 text-xs font-semibold"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Edit Text</span>
+              </button>
+            )}
             <button
               type="button"
               onMouseDown={(e) => e.stopPropagation()}
@@ -1280,34 +1715,58 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
           </div>
         )}
 
-        {/* Text Note Input Dialog */}
-        {textModalOpen && (
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-            <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 w-full max-w-sm shadow-2xl text-slate-100">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
-                Add {pendingMarkupType.toUpperCase()}
-              </h4>
+        {/* Text Note / Callout / Sticky Note In-Place Content Editor Dialog */}
+        {editingMarkupId && (
+          <div
+            onMouseDown={(e) => e.stopPropagation()}
+            className="absolute inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4"
+          >
+            <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 w-full max-w-sm shadow-2xl text-slate-100 animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
+                  <Edit3 className="w-3.5 h-3.5" />
+                  Edit {markups.find((m) => m.id === editingMarkupId)?.type.toUpperCase()} Content
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setEditingMarkupId(null)}
+                  className="text-slate-400 hover:text-white p-1"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
               <textarea
                 autoFocus
                 rows={3}
-                value={pendingText}
-                onChange={(e) => setPendingText(e.target.value)}
-                placeholder="Enter technical note, revision comment, or door reference..."
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 mb-3"
+                value={editTextValue}
+                onChange={(e) => setEditTextValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    handleSaveEditedText();
+                  }
+                }}
+                placeholder="Enter note, revision callout description, or comment..."
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 mb-3"
               />
-              <div className="flex items-center justify-end gap-2 text-xs">
-                <button
-                  onClick={() => setTextModalOpen(false)}
-                  className="px-3 py-1.5 rounded text-slate-400 hover:bg-slate-800 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveTextMarkup}
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 font-semibold rounded text-white transition-colors"
-                >
-                  Place Note
-                </button>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-[10px] text-slate-400">Press Ctrl+Enter to save</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingMarkupId(null)}
+                    className="px-3 py-1.5 rounded text-slate-400 hover:bg-slate-800 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveEditedText}
+                    className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 font-semibold rounded text-white transition-colors"
+                  >
+                    Save Changes
+                  </button>
+                </div>
               </div>
             </div>
           </div>

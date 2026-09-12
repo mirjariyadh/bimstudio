@@ -26,6 +26,10 @@ import {
   ExternalLink,
   HelpCircle,
   Building,
+  Tag,
+  DollarSign,
+  Edit2,
+  Check,
 } from 'lucide-react';
 import {
   DrawingSheetInfo,
@@ -37,7 +41,7 @@ import {
   CountCategory,
 } from '../types';
 import { SampleDrawing } from '../services/sampleDrawings';
-import { exportMeasurementsCsv, exportIssuesCsv } from '../services/exportService';
+import { exportMeasurementsCsv, exportIssuesCsv, exportTakeoffScheduleCsv } from '../services/exportService';
 import { generateDrawingIndexCsv } from '../services/ocrService';
 
 interface LeftSidebarProps {
@@ -348,6 +352,8 @@ interface RightSidebarProps {
   onDeleteMarkup: (id: string) => void;
   onAddIssue: (issue: IssueItem) => void;
   onUpdateIssueStatus: (id: string, status: any) => void;
+  onUpdateCountCategory?: (id: string, updates: Partial<CountCategory>) => void;
+  onAddCountCategory?: (category: CountCategory) => void;
 }
 
 export const RightSidebar: React.FC<RightSidebarProps> = ({
@@ -360,8 +366,19 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   onDeleteMarkup,
   onAddIssue,
   onUpdateIssueStatus,
+  onUpdateCountCategory,
+  onAddCountCategory,
 }) => {
   const [activeTab, setActiveTab] = useState<'ai' | 'markups' | 'issues' | 'takeoff' | 'ocr'>('ai');
+
+  // New Schedule Item form state
+  const [showAddScheduleItem, setShowAddScheduleItem] = useState(false);
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemScheduleCode, setNewItemScheduleCode] = useState('');
+  const [newItemUnitCost, setNewItemUnitCost] = useState<string>('');
+  const [newItemDiscipline, setNewItemDiscipline] = useState<AECDiscipline>('Architectural');
+  const [newItemColor, setNewItemColor] = useState('#3b82f6');
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
 
   // AI Chat states
   const [chatMessages, setChatMessages] = useState<AIChatMessage[]>([
@@ -867,56 +884,315 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
           </div>
         )}
 
-        {/* TAB 4: Quantity Takeoff */}
+        {/* TAB 4: AEC Schedule & Quantity Takeoff */}
         {activeTab === 'takeoff' && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="font-semibold text-slate-400 text-[11px]">
-                QUANTITY TAKEOFF & COUNTS
+              <span className="font-semibold text-slate-400 text-[11px] tracking-wider uppercase">
+                Takeoff & Schedule ({countCategories.length})
               </span>
-              <button
-                onClick={() => {
-                  const csv = exportMeasurementsCsv(markups);
-                  const blob = new Blob([csv], { type: 'text/csv' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = 'Takeoff_Report.csv';
-                  a.click();
-                }}
-                className="text-[10px] flex items-center gap-1 text-emerald-400 hover:text-emerald-300"
-              >
-                <Download className="w-3 h-3" />
-                <span>Export CSV</span>
-              </button>
-            </div>
-
-            <div className="space-y-1.5">
-              {countCategories.map((c) => (
-                <div
-                  key={c.id}
-                  className="p-2 bg-slate-950 border border-slate-800 rounded flex items-center justify-between"
+              <div className="flex items-center gap-1.5">
+                {onAddCountCategory && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddScheduleItem((prev) => !prev)}
+                    className="px-2 py-0.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-[10px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>New Item</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const csv = exportTakeoffScheduleCsv(countCategories);
+                    const blob = new Blob([csv], { type: 'text/csv' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${(currentDrawing.sheetInfo.sheetNumber || 'Takeoff')}_Schedule.csv`;
+                    a.click();
+                  }}
+                  title="Export Detailed Schedule with Costs to CSV"
+                  className="text-[10px] flex items-center gap-1 text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-800/40 px-2 py-0.5 rounded cursor-pointer transition-colors"
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: c.color }} />
-                    <span className="font-medium text-slate-200">{c.name}</span>
-                  </div>
-                  <span className="font-mono font-bold text-sm text-emerald-400">{c.count}</span>
-                </div>
-              ))}
+                  <Download className="w-3 h-3" />
+                  <span>Schedule CSV</span>
+                </button>
+              </div>
             </div>
 
-            {/* Total measured area */}
-            <div className="bg-slate-950 border border-slate-800 p-2.5 rounded-lg space-y-1">
-              <div className="text-[10px] uppercase text-slate-400 font-semibold">
-                Measured Polygon Area (Takeoff)
+            {/* Inline Form to Add New Custom Schedule Item */}
+            {showAddScheduleItem && (
+              <div className="bg-slate-950 border border-emerald-500/50 p-3 rounded-lg space-y-2.5 shadow-xl animate-in fade-in zoom-in-95 duration-150">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-xs text-emerald-400 flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5" />
+                    <span>Create Custom Schedule Item</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddScheduleItem(false)}
+                    className="text-slate-500 hover:text-white"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="col-span-2 space-y-1">
+                    <label className="text-[10px] uppercase font-semibold text-slate-400">
+                      Item Name *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Fire Damper 400x400"
+                      value={newItemName}
+                      onChange={(e) => setNewItemName(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-semibold text-slate-400">
+                      Schedule Code
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. FD-01"
+                      value={newItemScheduleCode}
+                      onChange={(e) => setNewItemScheduleCode(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-xs text-blue-300 font-mono placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-semibold text-slate-400">
+                      Discipline
+                    </label>
+                    <select
+                      value={newItemDiscipline}
+                      onChange={(e) => setNewItemDiscipline(e.target.value as any)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-xs text-white"
+                    >
+                      <option value="Architectural">Architectural</option>
+                      <option value="Structural">Structural</option>
+                      <option value="Mechanical">Mechanical</option>
+                      <option value="Electrical">Electrical</option>
+                      <option value="Plumbing">Plumbing</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-semibold text-slate-400">
+                      Unit Cost ($)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={5}
+                      placeholder="0.00"
+                      value={newItemUnitCost}
+                      onChange={(e) => setNewItemUnitCost(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-xs text-emerald-300 font-mono placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-semibold text-slate-400">
+                      Marker Color
+                    </label>
+                    <div className="flex items-center gap-1.5 pt-1">
+                      {['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#a855f7', '#06b6d4'].map(
+                        (col) => (
+                          <button
+                            key={col}
+                            type="button"
+                            onClick={() => setNewItemColor(col)}
+                            style={{ backgroundColor: col }}
+                            className={`w-5 h-5 rounded-full transition-transform ${
+                              newItemColor === col ? 'ring-2 ring-white scale-110' : 'opacity-70'
+                            }`}
+                          />
+                        )
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-1 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddScheduleItem(false)}
+                    className="px-2.5 py-1 text-slate-400 hover:text-white text-xs"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!newItemName.trim()) return;
+                      const newCat: CountCategory = {
+                        id: `cat-${Date.now()}`,
+                        name: newItemName.trim(),
+                        scheduleCode: newItemScheduleCode.trim() || `SCH-${String(countCategories.length + 1).padStart(2, '0')}`,
+                        unitCost: parseFloat(newItemUnitCost) || 0,
+                        discipline: newItemDiscipline,
+                        color: newItemColor,
+                        symbol: 'circle',
+                        count: 0,
+                      };
+                      onAddCountCategory?.(newCat);
+                      setNewItemName('');
+                      setNewItemScheduleCode('');
+                      setNewItemUnitCost('');
+                      setShowAddScheduleItem(false);
+                    }}
+                    className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded text-xs transition-colors"
+                  >
+                    Add to Schedule
+                  </button>
+                </div>
               </div>
-              <div className="text-base font-mono font-bold text-blue-400">
-                {markups
-                  .filter((m) => m.type === 'area' && m.measurementValue)
-                  .reduce((sum, m) => sum + (m.measurementValue || 0), 0)
-                  .toFixed(2)}{' '}
-                m²
+            )}
+
+            {/* Schedule Categories Cards with Custom Inputs */}
+            <div className="space-y-2">
+              {countCategories.map((c) => {
+                const subtotal = (c.count || 0) * (c.unitCost || 0);
+                const isEditing = editingCategoryId === c.id;
+
+                return (
+                  <div
+                    key={c.id}
+                    className="p-2.5 bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-lg space-y-1.5 transition-colors"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+                        {c.scheduleCode && (
+                          <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded text-[10px] font-mono font-bold">
+                            {c.scheduleCode}
+                          </span>
+                        )}
+                        <span className="font-semibold text-xs text-slate-200 truncate">
+                          {c.name}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="font-mono font-bold text-sm text-emerald-400 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-800/40">
+                          {c.count}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setEditingCategoryId(isEditing ? null : c.id)}
+                          className="p-1 text-slate-500 hover:text-slate-300 rounded hover:bg-slate-800 transition-colors"
+                          title="Edit Schedule Details"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Inline Edit Mode or Quick Cost Adjuster */}
+                    {isEditing ? (
+                      <div className="pt-2 border-t border-slate-800/80 space-y-2 text-xs">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[10px] text-slate-400 block mb-0.5">Schedule Code</label>
+                            <input
+                              type="text"
+                              value={c.scheduleCode || ''}
+                              onChange={(e) =>
+                                onUpdateCountCategory?.(c.id, { scheduleCode: e.target.value })
+                              }
+                              className="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-xs text-blue-300 font-mono"
+                              placeholder="e.g. DR-101"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-400 block mb-0.5">Unit Cost ($)</label>
+                            <input
+                              type="number"
+                              min={0}
+                              step={5}
+                              value={c.unitCost ?? ''}
+                              onChange={(e) =>
+                                onUpdateCountCategory?.(c.id, {
+                                  unitCost: parseFloat(e.target.value) || 0,
+                                })
+                              }
+                              className="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-xs text-emerald-300 font-mono"
+                              placeholder="0.00"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between pt-1">
+                          <span className="text-[10px] text-slate-500">{c.discipline || 'Architectural'}</span>
+                          <button
+                            type="button"
+                            onClick={() => setEditingCategoryId(null)}
+                            className="px-2 py-0.5 bg-blue-600/30 text-blue-300 hover:bg-blue-600/50 rounded text-[10px] font-semibold"
+                          >
+                            Done
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/60">
+                        <div className="flex items-center gap-1">
+                          <span>Unit: </span>
+                          <span className="font-mono text-slate-300 font-semibold">
+                            ${(c.unitCost || 0).toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 font-mono">
+                          <span className="text-slate-500">Subtotal:</span>
+                          <span className="text-emerald-400 font-bold">
+                            ${subtotal.toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Total Estimated Project Budget & Area Takeoff */}
+            <div className="bg-slate-950 border border-slate-800 p-3 rounded-lg space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] uppercase text-slate-400 font-semibold">
+                  Total Scheduled Items
+                </span>
+                <span className="font-mono font-bold text-slate-200 text-xs">
+                  {countCategories.reduce((sum, c) => sum + (c.count || 0), 0)} units
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] uppercase text-slate-400 font-semibold">
+                  Estimated Takeoff Cost
+                </span>
+                <span className="font-mono font-bold text-emerald-400 text-sm">
+                  $
+                  {countCategories
+                    .reduce((sum, c) => sum + (c.count || 0) * (c.unitCost || 0), 0)
+                    .toLocaleString()}
+                </span>
+              </div>
+              <div className="flex items-center justify-between pt-1.5 border-t border-slate-800">
+                <span className="text-[10px] uppercase text-slate-400 font-semibold">
+                  Measured Polygon Area
+                </span>
+                <span className="text-sm font-mono font-bold text-blue-400">
+                  {markups
+                    .filter((m) => m.type === 'area' && m.measurementValue)
+                    .reduce((sum, m) => sum + (m.measurementValue || 0), 0)
+                    .toFixed(2)}{' '}
+                  m²
+                </span>
               </div>
             </div>
           </div>
