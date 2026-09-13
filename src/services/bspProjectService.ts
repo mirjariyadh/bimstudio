@@ -63,25 +63,28 @@ export async function createBspProject(params: {
   const serializedSheets: BspProjectSheetData[] = [];
 
   for (const sheet of sheets) {
-    const isBuiltIn = ALL_SAMPLE_DRAWINGS.some((s) => s.id === sheet.id);
+    const sampleMatch = ALL_SAMPLE_DRAWINGS.find(
+      (s) => s.id === sheet.id || (sheet.sheetInfo?.sheetNumber && s.sheetInfo?.sheetNumber === sheet.sheetInfo.sheetNumber)
+    );
 
     let dataUrl: string | undefined;
-    // For imported PDFs/images or customized sheets, render to high-resolution snapshot
-    if (!isBuiltIn) {
-      try {
-        const offscreen = document.createElement('canvas');
-        offscreen.width = Math.max(sheet.width || 1400, 400);
-        offscreen.height = Math.max(sheet.height || 950, 300);
-        const ctx = offscreen.getContext('2d');
-        if (ctx) {
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, offscreen.width, offscreen.height);
-          sheet.render(ctx, offscreen.width, offscreen.height);
-          dataUrl = offscreen.toDataURL('image/png');
+    try {
+      const offscreen = document.createElement('canvas');
+      const w = Math.max(sheet.width || 1400, 400);
+      const h = Math.max(sheet.height || 950, 300);
+      offscreen.width = w;
+      offscreen.height = h;
+      const ctx = offscreen.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, w, h);
+        if (typeof sheet.render === 'function') {
+          sheet.render(ctx, w, h);
         }
-      } catch (err) {
-        console.warn(`Could not rasterize sheet ${sheet.id} for .bsp export:`, err);
+        dataUrl = offscreen.toDataURL('image/jpeg', 0.9);
       }
+    } catch (err) {
+      console.warn(`Could not rasterize sheet ${sheet.id} for .bsp export:`, err);
     }
 
     serializedSheets.push({
@@ -91,7 +94,7 @@ export async function createBspProject(params: {
       height: sheet.height,
       extractedText: sheet.extractedText || '',
       revisionHistory: sheet.revisionHistory ? [...sheet.revisionHistory] : undefined,
-      sampleId: isBuiltIn ? sheet.id : undefined,
+      sampleId: sampleMatch ? sampleMatch.id : undefined,
       dataUrl,
     });
   }
@@ -99,7 +102,7 @@ export async function createBspProject(params: {
   return {
     version: '1.0.0',
     format: 'bim-studio-project',
-    projectName: projectName || 'BIM_Studio_Project',
+    projectName: projectName || 'Personal project assistance',
     savedAt: new Date().toISOString(),
     sheets: serializedSheets,
     currentSheetId,
@@ -121,59 +124,120 @@ export async function restoreSheetsFromBsp(
 ): Promise<SampleDrawing[]> {
   const restored: SampleDrawing[] = [];
 
-  for (const s of bspSheets) {
-    // Check if it's a built-in sample drawing
-    const builtIn = s.sampleId
-      ? ALL_SAMPLE_DRAWINGS.find((item) => item.id === s.sampleId)
-      : null;
+  for (let idx = 0; idx < bspSheets.length; idx++) {
+    const s = bspSheets[idx];
+    // 1. Check if it matches a built-in sample drawing
+    const builtIn =
+      (s.sampleId && ALL_SAMPLE_DRAWINGS.find((item) => item.id === s.sampleId)) ||
+      ALL_SAMPLE_DRAWINGS.find((item) => item.id === s.id) ||
+      (s.sheetInfo?.sheetNumber &&
+        ALL_SAMPLE_DRAWINGS.find((item) => item.sheetInfo.sheetNumber === s.sheetInfo.sheetNumber));
 
     if (builtIn) {
       restored.push({
         id: s.id,
-        sheetInfo: { ...s.sheetInfo },
+        sheetInfo: { ...s.sheetInfo, pageIndex: idx },
         width: s.width || builtIn.width,
         height: s.height || builtIn.height,
         extractedText: s.extractedText || builtIn.extractedText,
         revisionHistory: s.revisionHistory || builtIn.revisionHistory,
         render: builtIn.render,
       });
-    } else if (s.dataUrl) {
-      // Reconstruct image from dataURL
-      const img = new Image();
-      await new Promise<void>((resolve) => {
-        img.onload = () => resolve();
-        img.onerror = () => {
-          console.warn(`Failed to reload image for sheet ${s.id}`);
-          resolve();
-        };
-        img.src = s.dataUrl!;
-      });
-
-      restored.push({
-        id: s.id,
-        sheetInfo: { ...s.sheetInfo },
-        width: s.width || img.naturalWidth || 1400,
-        height: s.height || img.naturalHeight || 950,
-        extractedText: s.extractedText || '',
-        revisionHistory: s.revisionHistory,
-        render: (ctx, w, h) => {
-          ctx.drawImage(img, 0, 0, w, h);
-        },
-      });
-    } else {
-      // Fallback blank sheet
-      restored.push({
-        id: s.id,
-        sheetInfo: { ...s.sheetInfo },
-        width: s.width || 1400,
-        height: s.height || 950,
-        extractedText: s.extractedText || '',
-        render: (ctx, w, h) => {
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, w, h);
-        },
-      });
+      continue;
     }
+
+    // 2. Reconstruct from dataUrl if available
+    if (s.dataUrl && s.dataUrl.length > 50) {
+      try {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        await new Promise<void>((resolve) => {
+          img.onload = () => resolve();
+          img.onerror = () => resolve();
+          img.src = s.dataUrl!;
+        });
+
+        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+          const w = s.width || img.naturalWidth || 1400;
+          const h = s.height || img.naturalHeight || 950;
+          const offCanvas = document.createElement('canvas');
+          offCanvas.width = w;
+          offCanvas.height = h;
+          const offCtx = offCanvas.getContext('2d');
+          if (offCtx) {
+            offCtx.fillStyle = '#ffffff';
+            offCtx.fillRect(0, 0, w, h);
+            offCtx.drawImage(img, 0, 0, w, h);
+          }
+
+          restored.push({
+            id: s.id,
+            sheetInfo: {
+              ...s.sheetInfo,
+              pageIndex: idx,
+            },
+            width: w,
+            height: h,
+            extractedText: s.extractedText || '',
+            revisionHistory: s.revisionHistory,
+            render: (ctx, rw, rh) => {
+              ctx.drawImage(offCanvas, 0, 0, rw, rh);
+            },
+          });
+          continue;
+        }
+      } catch (err) {
+        console.warn(`Error loading sheet image for ${s.id}:`, err);
+      }
+    }
+
+    // 3. Fallback: Create clean architectural sheet canvas
+    const w = s.width || 1400;
+    const h = s.height || 950;
+    restored.push({
+      id: s.id,
+      sheetInfo: {
+        id: s.id,
+        sheetNumber: s.sheetInfo?.sheetNumber || `SHT-${(idx + 1).toString().padStart(3, '0')}`,
+        title: s.sheetInfo?.title || 'Architectural Sheet',
+        discipline: s.sheetInfo?.discipline || 'Architectural',
+        revision: s.sheetInfo?.revision || 'REV 01',
+        date: s.sheetInfo?.date || new Date().toISOString().slice(0, 10),
+        scale: s.sheetInfo?.scale || '1:100',
+        projectName: s.sheetInfo?.projectName || 'Personal project assistance',
+        pageIndex: idx,
+      },
+      width: w,
+      height: h,
+      extractedText: s.extractedText || '',
+      render: (ctx, rw, rh) => {
+        // Clean engineering grid background
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, rw, rh);
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 1;
+        const step = 50;
+        for (let x = 0; x < rw; x += step) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, rh);
+          ctx.stroke();
+        }
+        for (let y = 0; y < rh; y += step) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(rw, y);
+          ctx.stroke();
+        }
+        // Border & title block
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(20, 20, rw - 40, rh - 40);
+        ctx.fillStyle = '#1e293b';
+        ctx.font = 'bold 16px sans-serif';
+        ctx.fillText(s.sheetInfo?.title || 'Architectural Sheet', 40, 50);
+      },
+    });
   }
 
   return restored;
@@ -274,12 +338,15 @@ export async function openBspFromFilePicker(): Promise<{ file: File; handle?: Fi
       const [handle] = await (window as any).showOpenFilePicker({
         types: [
           {
-            description: 'BIM Studio Project (*.bsp)',
+            description: 'BIM Studio Project (*.bsp, *.json)',
             accept: {
-              'application/vnd.bimstudio.project+json': ['.bsp'],
+              'application/json': ['.bsp', '.json'],
+              'text/plain': ['.bsp', '.json'],
+              'application/octet-stream': ['.bsp'],
             },
           },
         ],
+        excludeAcceptAllOption: false,
         multiple: false,
       });
       if (handle) {
@@ -287,9 +354,11 @@ export async function openBspFromFilePicker(): Promise<{ file: File; handle?: Fi
         return { file, handle };
       }
     } catch (err: any) {
-      if (err?.name !== 'AbortError') {
-        console.warn('Native open file picker failed:', err);
+      if (err?.name === 'AbortError') {
+        return null;
       }
+      console.warn('Native open file picker error, falling back to standard input:', err);
+      throw err;
     }
   }
   return null;

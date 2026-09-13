@@ -23,7 +23,7 @@ export function parseDrawingTextLayer(text: string, defaultDiscipline: AECDiscip
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const entities: ExtractedOcrEntity[] = [];
 
-  let projectName = 'Metropolitan Medical Center - Phase 2';
+  let projectName = 'Personal project assistance';
   let sheetNumber = 'A-101';
   let title = 'Ground Floor Architectural Plan';
   let revision = 'Rev 03';

@@ -172,7 +172,7 @@ app.post("/api/ai/title-block", async (req, res) => {
 
     if (!ai) {
       return res.json({
-        projectName: "Metropolitan Medical Center - Phase 2",
+        projectName: "Personal project assistance",
         drawingNumber: "A-101",
         drawingTitle: "Ground Floor Architectural Plan",
         revision: "Rev 03",
@@ -272,7 +272,7 @@ app.post("/api/ai/summary", async (req, res) => {
 
     if (!ai) {
       return res.json({
-        projectName: "Metropolitan Medical Center - Phase 2",
+        projectName: "Personal project assistance",
         documentType: "Architectural Drawing Set",
         totalPages: pagesCount || 5,
         disciplines: ["Architectural", "Structural", "Mechanical", "Electrical"],

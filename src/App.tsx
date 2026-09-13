@@ -64,6 +64,7 @@ import {
 } from './services/bspProjectService';
 import {
   isFileSystemAccessSupported,
+  isInsideIframe,
   pickPdfWithNativeHandle,
   writeBlobToSourceFileHandle,
   saveBlobWithSaveFilePicker,
@@ -257,15 +258,16 @@ export default function App() {
 
   // Hidden Image File Input
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const appBspFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Takeoff count categories with AEC schedule metadata
+  // Takeoff count categories with AEC schedule metadata (Clean project starts with 0 counts)
   const [activeCountCategory, setActiveCountCategory] = useState<string>('doors');
   const [countCategories, setCountCategories] = useState<CountCategory[]>([
-    { id: 'doors', name: 'Doors & Openings', color: '#3b82f6', count: 2, scheduleCode: 'DR-101', unitCost: 450, discipline: 'Architectural' },
-    { id: 'windows', name: 'Curtain Wall / Windows', color: '#06b6d4', count: 4, scheduleCode: 'WD-201', unitCost: 650, discipline: 'Architectural' },
-    { id: 'columns', name: 'Structural Columns', color: '#eab308', count: 6, scheduleCode: 'COL-C1', unitCost: 1250, discipline: 'Structural' },
-    { id: 'diffusers', name: 'HVAC Air Diffusers', color: '#10b981', count: 8, scheduleCode: 'DIFF-A', unitCost: 95, discipline: 'Mechanical' },
-    { id: 'fixtures', name: 'Plumbing Fixtures', color: '#a855f7', count: 3, scheduleCode: 'PL-WC', unitCost: 320, discipline: 'Plumbing' },
+    { id: 'doors', name: 'Doors & Openings', color: '#3b82f6', count: 0, scheduleCode: 'DR-101', unitCost: 450, discipline: 'Architectural' },
+    { id: 'windows', name: 'Curtain Wall / Windows', color: '#06b6d4', count: 0, scheduleCode: 'WD-201', unitCost: 650, discipline: 'Architectural' },
+    { id: 'columns', name: 'Structural Columns', color: '#eab308', count: 0, scheduleCode: 'COL-C1', unitCost: 1250, discipline: 'Structural' },
+    { id: 'diffusers', name: 'HVAC Air Diffusers', color: '#10b981', count: 0, scheduleCode: 'DIFF-A', unitCost: 95, discipline: 'Mechanical' },
+    { id: 'fixtures', name: 'Plumbing Fixtures', color: '#a855f7', count: 0, scheduleCode: 'PL-WC', unitCost: 320, discipline: 'Plumbing' },
   ]);
 
   const handleUpdateCountCategory = (id: string, updates: Partial<CountCategory>) => {
@@ -279,11 +281,11 @@ export default function App() {
     setActiveCountCategory(newCat.id);
   };
 
-  // Markups & BIM Issues
-  const [markups, setMarkups] = useState<MarkupItem[]>(INITIAL_MARKUPS);
+  // Markups & BIM Issues (Clean project default: no markups, no issues)
+  const [markups, setMarkups] = useState<MarkupItem[]>([]);
   const [undoStack, setUndoStack] = useState<MarkupItem[][]>([]);
   const [redoStack, setRedoStack] = useState<MarkupItem[][]>([]);
-  const [issues, setIssues] = useState<IssueItem[]>(INITIAL_ISSUES);
+  const [issues, setIssues] = useState<IssueItem[]>([]);
 
   // Per-Page Scale Calibrations
   const [pageCalibrations, setPageCalibrations] = useState<Record<number, PageScaleCalibration>>({
@@ -565,6 +567,10 @@ export default function App() {
 
   // Handle PDF & Drawing Upload with Choice Prompt
   const handleRequestOpenPdf = (file: File, handle?: FileSystemFileHandle) => {
+    if (file.name.toLowerCase().endsWith('.bsp') || file.type.includes('bimstudio')) {
+      handleOpenProjectFile(file, handle);
+      return;
+    }
     if (sheets && sheets.length > 0) {
       setPendingPdfFile(file);
       setPendingFileHandle(handle || null);
@@ -1102,20 +1108,48 @@ export default function App() {
     try {
       addToast('Opening Project', `Loading "${file.name}"...`, 'info');
       const project = await parseBspFile(file);
-      const loadedSheets = await restoreSheetsFromBsp(project.sheets);
 
-      if (loadedSheets.length > 0) {
-        setSheets(loadedSheets);
-        setCurrentSheetId(project.currentSheetId || loadedSheets[0].id);
+      // Restore sheets
+      if (project.sheets && project.sheets.length > 0) {
+        const loadedSheets = await restoreSheetsFromBsp(project.sheets);
+        if (loadedSheets.length > 0) {
+          setSheets(loadedSheets);
+          const targetSheetId =
+            project.currentSheetId && loadedSheets.some((s) => s.id === project.currentSheetId)
+              ? project.currentSheetId
+              : loadedSheets[0].id;
+          setCurrentSheetId(targetSheetId);
+        }
       }
 
-      setMarkups(project.markups || []);
+      // Restore vector markups
+      setMarkups(Array.isArray(project.markups) ? project.markups : []);
       setUndoStack([]);
       setRedoStack([]);
 
-      if (project.issues) setIssues(project.issues);
-      if (project.pageCalibrations) setPageCalibrations(project.pageCalibrations);
-      if (project.countCategories) setCountCategories(project.countCategories);
+      // Restore BIM issues
+      if (Array.isArray(project.issues)) {
+        setIssues(project.issues);
+      } else {
+        setIssues([]);
+      }
+
+      // Restore calibrations
+      if (project.pageCalibrations && typeof project.pageCalibrations === 'object') {
+        setPageCalibrations(project.pageCalibrations);
+      }
+
+      // Restore takeoff categories
+      if (Array.isArray(project.countCategories) && project.countCategories.length > 0) {
+        setCountCategories(project.countCategories);
+      }
+
+      // Restore settings
+      if (project.projectSettings) {
+        if (project.projectSettings.unit) setUnit(project.projectSettings.unit);
+        if (project.projectSettings.strokeWidth) setStrokeWidth(project.projectSettings.strokeWidth);
+        if (project.projectSettings.colorCategory) setColorCategory(project.projectSettings.colorCategory);
+      }
 
       if (handle) {
         setProjectFileHandle(handle);
@@ -1123,9 +1157,12 @@ export default function App() {
       setProjectFileName(file.name);
       setAutosaveStatus('saved');
 
+      const markupCount = Array.isArray(project.markups) ? project.markups.length : 0;
+      const sheetCount = project.sheets ? project.sheets.length : sheets.length;
+
       addToast(
         'Project Restored',
-        `Successfully opened "${file.name}". Restored ${loadedSheets.length} sheet(s) and ${(project.markups || []).length} markup(s) in editable vector format.`,
+        `Successfully opened "${file.name}". Restored ${sheetCount} sheet(s) and ${markupCount} markup(s) in editable vector format.`,
         'success'
       );
     } catch (err: any) {
@@ -1134,14 +1171,27 @@ export default function App() {
     }
   };
 
-  const handleOpenProjectPrompt = async () => {
-    if (isFileSystemAccessSupported()) {
-      const picked = await openBspFromFilePicker();
-      if (picked) {
-        await handleOpenProjectFile(picked.file, picked.handle);
+  const handleOpenProjectPrompt = async (): Promise<boolean> => {
+    // 1. If File System Access API is supported and not running in an iframe, try native picker
+    if (isFileSystemAccessSupported() && !isInsideIframe()) {
+      try {
+        const picked = await openBspFromFilePicker();
+        if (picked) {
+          await handleOpenProjectFile(picked.file, picked.handle);
+          return true;
+        }
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return true;
+        console.warn('Native open project picker failed, falling back to input element:', err);
       }
     }
+    // 2. Direct input element fallback
+    appBspFileInputRef.current?.click();
+    return true;
   };
+
+  const openProjectPromptRef = useRef(handleOpenProjectPrompt);
+  openProjectPromptRef.current = handleOpenProjectPrompt;
 
   // Export PDF with custom options from modal
   const handleConfirmExportPdfModal = async (options: ExportPdfModalOptions) => {
@@ -1258,6 +1308,13 @@ export default function App() {
         return;
       }
 
+      // Ctrl+O / Cmd+O: Open Project (.bsp)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
+        e.preventDefault();
+        openProjectPromptRef.current();
+        return;
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setIsCommandCenterOpen((prev) => !prev);
@@ -1312,6 +1369,39 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleUndo, handleRedo]);
 
+  // Global Drag and Drop support for .bsp project files and PDFs
+  useEffect(() => {
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = 'copy';
+      }
+    };
+
+    const handleDrop = (e: DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+        const file = e.dataTransfer.files[0];
+        if (
+          file.name.toLowerCase().endsWith('.bsp') ||
+          file.type.includes('bimstudio') ||
+          file.name.toLowerCase().endsWith('.json')
+        ) {
+          handleOpenProjectFile(file);
+        } else if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+          handleRequestOpenPdf(file);
+        }
+      }
+    };
+
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('drop', handleDrop);
+    return () => {
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('drop', handleDrop);
+    };
+  }, [sheets]);
+
   return (
     <div className="flex flex-col h-screen w-screen bg-slate-950 text-slate-100 overflow-hidden font-sans relative">
       {/* Mobile Screen Guidance Notification */}
@@ -1323,6 +1413,20 @@ export default function App() {
         ref={imageInputRef}
         onChange={handleImageFileChange}
         accept="image/png,image/jpeg,image/svg+xml"
+        className="hidden"
+      />
+
+      {/* Hidden File Input for .bsp Project */}
+      <input
+        type="file"
+        ref={appBspFileInputRef}
+        onChange={(e) => {
+          if (e.target.files && e.target.files[0]) {
+            handleOpenProjectFile(e.target.files[0]);
+            e.target.value = '';
+          }
+        }}
+        accept=".bsp,.json,application/json,text/plain,*/*"
         className="hidden"
       />
 

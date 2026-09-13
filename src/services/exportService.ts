@@ -90,7 +90,7 @@ export function generatePrintableReportHtml(
 <body>
   <h1>AEC DRAWING REVIEW & BIM ISSUE REPORT</h1>
   <div class="meta-box">
-    <div class="meta-item"><strong>Project Name</strong> ${projectInfo.projectName || 'Metropolitan Medical Center - Phase 2'}</div>
+    <div class="meta-item"><strong>Project Name</strong> ${projectInfo.projectName || 'Personal project assistance'}</div>
     <div class="meta-item"><strong>Drawing Number</strong> ${projectInfo.sheetNumber || 'A-101'}</div>
     <div class="meta-item"><strong>Current Revision</strong> ${projectInfo.revision || 'Rev 03'}</div>
     <div class="meta-item"><strong>Discipline</strong> ${projectInfo.discipline || 'Architectural'}</div>

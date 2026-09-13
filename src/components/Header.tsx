@@ -31,6 +31,7 @@ import {
   Plus,
   Save,
   HardDrive,
+  FolderOpen,
 } from 'lucide-react';
 import { DrawingSheetInfo, AppWorkspaceMode } from '../types';
 
@@ -44,7 +45,7 @@ interface HeaderProps {
   onSaveProject: (forceSaveAs?: boolean) => void;
   isSavingProject?: boolean;
   projectFileName?: string;
-  onOpenProjectPrompt: () => void;
+  onOpenProjectPrompt?: () => void | Promise<any>;
   onOpenProjectFile?: (file: File) => void;
   // Source PDF saving
   onSaveToSource: (forceSaveAs?: boolean) => void;
@@ -134,9 +135,11 @@ export const Header: React.FC<HeaderProps> = ({
 
   const handleBspFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
       if (onOpenProjectFile) {
-        onOpenProjectFile(e.target.files[0]);
+        onOpenProjectFile(file);
       }
+      e.target.value = '';
     }
   };
 
@@ -148,12 +151,16 @@ export const Header: React.FC<HeaderProps> = ({
     }
   };
 
-  const handleTriggerOpenProject = () => {
+  const handleTriggerOpenProject = async () => {
     if (onOpenProjectPrompt) {
-      onOpenProjectPrompt();
-    } else {
-      bspFileInputRef.current?.click();
+      try {
+        const handled = await onOpenProjectPrompt();
+        if (handled) return;
+      } catch (err) {
+        console.warn('Open project prompt error, falling back to input:', err);
+      }
     }
+    bspFileInputRef.current?.click();
   };
 
   return (
@@ -354,7 +361,7 @@ export const Header: React.FC<HeaderProps> = ({
             type="file"
             ref={bspFileInputRef}
             onChange={handleBspFileChange}
-            accept=".bsp,application/json"
+            accept=".bsp,.json,application/json,text/plain,*/*"
             className="hidden"
           />
 
@@ -378,6 +385,17 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="inline">
               {isSavingProject ? 'Saving...' : 'Save Project'}
             </span>
+          </button>
+
+          {/* Open Project (.bsp) Button */}
+          <button
+            id="open-project-header-button"
+            onClick={handleTriggerOpenProject}
+            title="Open saved .bsp project file (Ctrl+O)"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-sky-200 border border-slate-700 hover:border-sky-600/50 rounded-lg transition-all shadow-xs cursor-pointer"
+          >
+            <FolderOpen className="w-3.5 h-3.5 text-sky-400" />
+            <span className="inline">Open Project</span>
           </button>
 
           {/* Primary Open PDF Button */}

@@ -273,13 +273,26 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   // Render base technical drawing onto baseCanvas
   useEffect(() => {
     const baseCanvas = baseCanvasRef.current;
-    if (!baseCanvas) return;
-    baseCanvas.width = currentDrawing.width;
-    baseCanvas.height = currentDrawing.height;
+    if (!baseCanvas || !currentDrawing) return;
+    const w = currentDrawing.width || 1400;
+    const h = currentDrawing.height || 950;
+    baseCanvas.width = w;
+    baseCanvas.height = h;
     const ctx = baseCanvas.getContext('2d');
     if (!ctx) return;
 
-    currentDrawing.render(ctx, currentDrawing.width, currentDrawing.height);
+    try {
+      if (typeof currentDrawing.render === 'function') {
+        currentDrawing.render(ctx, w, h);
+      } else {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, w, h);
+      }
+    } catch (renderErr) {
+      console.warn('Error executing sheet render:', renderErr);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, w, h);
+    }
   }, [currentDrawing]);
 
   // Screen coordinate to Drawing coordinate transform

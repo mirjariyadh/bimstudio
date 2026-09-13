@@ -212,7 +212,7 @@ export const sampleDrawingA101_Rev02: SampleDrawing = {
     approvedBy: 'D.H.',
     scale: '1:100',
     discipline: 'Architectural',
-    projectName: 'Metropolitan Medical Center - Phase 2',
+    projectName: 'Personal project assistance',
   },
   width: 1400,
   height: 950,
@@ -221,7 +221,7 @@ export const sampleDrawingA101_Rev02: SampleDrawing = {
     { revision: 'Rev 01', date: '2026-02-04', description: 'Design Development Client Review', author: 'M.R.', status: 'Superceded' },
     { revision: 'Rev 02', date: '2026-03-15', description: 'Tender Issue / Permit Set', author: 'J.K.', status: 'Current' },
   ],
-  extractedText: `METROPOLITAN MEDICAL CENTER - PHASE 2
+  extractedText: `PERSONAL PROJECT ASSISTANCE
 SHEET A-101 GROUND FLOOR ARCHITECTURAL PLAN REV 02
 SCALE: 1:100 | DATE: 2026-03-15
 ROOMS:
@@ -401,7 +401,7 @@ export const sampleDrawingA101_Rev03: SampleDrawing = {
     approvedBy: 'D.H.',
     scale: '1:100',
     discipline: 'Architectural',
-    projectName: 'Metropolitan Medical Center - Phase 2',
+    projectName: 'Personal project assistance',
   },
   width: 1400,
   height: 950,
@@ -411,7 +411,7 @@ export const sampleDrawingA101_Rev03: SampleDrawing = {
     { revision: 'Rev 02', date: '2026-03-15', description: 'Tender Issue / Permit Set', author: 'J.K.', status: 'Superceded' },
     { revision: 'Rev 03', date: '2026-04-02', description: 'Construction Issue - Clinic Expansion & Door D-104 Added', author: 'M.R.', status: 'Current' },
   ],
-  extractedText: `METROPOLITAN MEDICAL CENTER - PHASE 2
+  extractedText: `PERSONAL PROJECT ASSISTANCE
 SHEET A-101 GROUND FLOOR ARCHITECTURAL PLAN REV 03 (CURRENT)
 SCALE: 1:100 | DATE: 2026-04-02
 REVISION 03 CHANGES:
@@ -647,7 +647,7 @@ export const sampleDrawingA102: SampleDrawing = {
     approvedBy: 'D.H.',
     scale: '1:100',
     discipline: 'Architectural',
-    projectName: 'Metropolitan Medical Center - Phase 2',
+    projectName: 'Personal project assistance',
   },
   width: 1400,
   height: 950,
@@ -655,7 +655,7 @@ export const sampleDrawingA102: SampleDrawing = {
     { revision: 'Rev 01', date: '2026-02-15', description: 'Internal Clinic Review', author: 'M.R.', status: 'Superceded' },
     { revision: 'Rev 02', date: '2026-03-20', description: 'Coordination Issue', author: 'M.R.', status: 'Current' },
   ],
-  extractedText: `METROPOLITAN MEDICAL CENTER - PHASE 2
+  extractedText: `PERSONAL PROJECT ASSISTANCE
 SHEET A-102 FIRST FLOOR PLAN REV 02
 SCALE: 1:100 | DATE: 2026-03-20
 ROOMS:
@@ -765,7 +765,7 @@ export const sampleDrawingS101: SampleDrawing = {
     approvedBy: 'T.B.',
     scale: '1:100',
     discipline: 'Structural',
-    projectName: 'Metropolitan Medical Center - Phase 2',
+    projectName: 'Personal project assistance',
   },
   width: 1400,
   height: 950,
@@ -773,7 +773,7 @@ export const sampleDrawingS101: SampleDrawing = {
     { revision: 'Rev 00', date: '2026-01-20', description: 'Foundation Schematic', author: 'D.C.', status: 'Superceded' },
     { revision: 'Rev 01', date: '2026-03-12', description: 'Structural Engineering Review', author: 'D.C.', status: 'Current' },
   ],
-  extractedText: `METROPOLITAN MEDICAL CENTER - PHASE 2
+  extractedText: `PERSONAL PROJECT ASSISTANCE
 SHEET S-101 FOUNDATION & STRUCTURAL GRID PLAN REV 01
 SCALE: 1:100 | DATE: 2026-03-12
 STRUCTURAL ELEMENTS:
@@ -859,7 +859,7 @@ export const sampleDrawingM101: SampleDrawing = {
     approvedBy: 'D.H.',
     scale: '1:100',
     discipline: 'Mechanical',
-    projectName: 'Metropolitan Medical Center - Phase 2',
+    projectName: 'Personal project assistance',
   },
   width: 1400,
   height: 950,
@@ -867,7 +867,7 @@ export const sampleDrawingM101: SampleDrawing = {
     { revision: 'Rev 01', date: '2026-02-28', description: 'HVAC Schematic Layout', author: 'A.L.', status: 'Superceded' },
     { revision: 'Rev 02', date: '2026-03-22', description: 'MEP Coordination Set', author: 'A.L.', status: 'Current' },
   ],
-  extractedText: `METROPOLITAN MEDICAL CENTER - PHASE 2
+  extractedText: `PERSONAL PROJECT ASSISTANCE
 SHEET M-101 HVAC DUCTWORK & DIFFUSER LAYOUT REV 02
 SCALE: 1:100 | DATE: 2026-03-22
 MECHANICAL EQUIPMENT:
