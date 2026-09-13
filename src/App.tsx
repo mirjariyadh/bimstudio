@@ -32,6 +32,7 @@ import { FlattenModal } from './components/editPdf/FlattenModal';
 import { ClearMarkupsModal } from './components/ClearMarkupsModal';
 import { ExportPdfModal } from './components/ExportPdfModal';
 import { OpenPdfModal } from './components/OpenPdfModal';
+import { NewProjectModal } from './components/NewProjectModal';
 import { EmptyWorkspace } from './components/EmptyWorkspace';
 import { MobileDeviceWarning } from './components/MobileDeviceWarning';
 import { loadDrawingFilesAsSheets } from './services/pdfService';
@@ -328,6 +329,7 @@ export default function App() {
   });
 
   // Modal Dialogs
+  const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [isCompareOpen, setIsCompareOpen] = useState(false);
   const [isCalibrateOpen, setIsCalibrateOpen] = useState(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
@@ -658,15 +660,40 @@ export default function App() {
     addToast('Sheet Removed', 'Drawing sheet removed from project.');
   };
 
-  const handleClearAllSheets = () => {
+  const handleConfirmNewProject = () => {
     setSheets([]);
     setCurrentSheetId('');
     setMarkups([]);
     setUndoStack([]);
     setRedoStack([]);
+    setIssues([]);
     setSourceFileHandle(null);
     setSourceFileName('');
-    addToast('Workspace Cleared', 'All drawing sheets removed. Workspace is ready for a new document.');
+    setProjectFileHandle(null);
+    setProjectFileName('');
+    setAutosaveStatus('saved');
+    addToast('New Project', 'Started a clean project workspace.');
+  };
+
+  const handleSaveAndConfirmNewProject = async () => {
+    try {
+      await handleSaveProject(false);
+    } catch (err) {
+      console.warn('Error saving before new project:', err);
+    }
+    handleConfirmNewProject();
+  };
+
+  const handleTriggerNewProject = () => {
+    if (sheets.length > 0 || markups.length > 0) {
+      setIsNewProjectModalOpen(true);
+    } else {
+      handleConfirmNewProject();
+    }
+  };
+
+  const handleClearAllSheets = () => {
+    handleConfirmNewProject();
   };
 
   const handleRestoreSamples = () => {
@@ -1297,6 +1324,13 @@ export default function App() {
         return;
       }
 
+      // Ctrl+N / Cmd+N: New Project
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        handleTriggerNewProject();
+        return;
+      }
+
       // Ctrl+S / Cmd+S: Save Project (.bsp) or with Shift save PDF
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
@@ -1435,6 +1469,7 @@ export default function App() {
         currentSheet={activeSheetInfo}
         availableSheets={sheets.map((s) => s.sheetInfo)}
         onSelectSheet={(id) => setCurrentSheetId(id)}
+        onNewProject={handleTriggerNewProject}
         onUploadPdf={handleRequestOpenPdf}
         onRemoveCurrentSheet={() => currentDrawing && handleRemoveSheet(currentDrawing.id)}
         onClearAllSheets={handleClearAllSheets}
@@ -1861,6 +1896,17 @@ export default function App() {
         onConfirmAppend={() => {
           if (pendingPdfFile) handleProcessPdfFile(pendingPdfFile, 'append', pendingFileHandle || undefined);
         }}
+      />
+
+      {/* New Project Confirmation Modal */}
+      <NewProjectModal
+        isOpen={isNewProjectModalOpen}
+        onClose={() => setIsNewProjectModalOpen(false)}
+        onConfirmNew={handleConfirmNewProject}
+        onSaveAndConfirmNew={handleSaveAndConfirmNewProject}
+        sheetsCount={sheets.length}
+        markupsCount={markups.length}
+        projectName={currentDrawing?.sheetInfo.projectName}
       />
     </div>
   );

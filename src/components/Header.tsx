@@ -32,6 +32,7 @@ import {
   Save,
   HardDrive,
   FolderOpen,
+  FilePlus2,
 } from 'lucide-react';
 import { DrawingSheetInfo, AppWorkspaceMode } from '../types';
 
@@ -41,6 +42,8 @@ interface HeaderProps {
   onSelectSheet: (id: string) => void;
   onUploadPdf: (file: File) => void;
   onOpenNativePicker?: () => void;
+  // New Project
+  onNewProject?: () => void;
   // BSP Project (.bsp)
   onSaveProject: (forceSaveAs?: boolean) => void;
   isSavingProject?: boolean;
@@ -76,6 +79,7 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectSheet,
   onUploadPdf,
   onOpenNativePicker,
+  onNewProject,
   onSaveProject,
   isSavingProject = false,
   projectFileName = '',
@@ -105,22 +109,12 @@ export const Header: React.FC<HeaderProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bspFileInputRef = useRef<HTMLInputElement>(null);
   const [showFileMenu, setShowFileMenu] = useState(false);
-  const [showExportMenu, setShowExportMenu] = useState(false);
-  const [showDocMenu, setShowDocMenu] = useState(false);
   const fileMenuRef = useRef<HTMLDivElement>(null);
-  const exportMenuRef = useRef<HTMLDivElement>(null);
-  const docMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (fileMenuRef.current && !fileMenuRef.current.contains(e.target as Node)) {
         setShowFileMenu(false);
-      }
-      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
-        setShowExportMenu(false);
-      }
-      if (docMenuRef.current && !docMenuRef.current.contains(e.target as Node)) {
-        setShowDocMenu(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -186,7 +180,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Sheet / Drawing Selector & Document Actions */}
         <div className="flex items-center gap-1.5">
-          {/* File Menu Dropdown (Save Project, Save As, Open Project, Export) */}
+          {/* File Menu Dropdown */}
           <div className="relative" ref={fileMenuRef}>
             <button
               id="file-menu-dropdown-button"
@@ -200,13 +194,50 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
 
             {showFileMenu && (
-              <div className="absolute left-0 top-full mt-1.5 w-68 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1.5 z-50 text-xs text-slate-200 divide-y divide-slate-800 animate-in fade-in slide-in-from-top-1">
-                {/* 1. BIM Studio Project (.bsp) Section */}
+              <div className="absolute left-0 top-full mt-1.5 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1.5 z-50 text-xs text-slate-200 divide-y divide-slate-800 animate-in fade-in slide-in-from-top-1">
+                {/* 1. Project (.bsp) Section */}
                 <div className="py-1">
                   <div className="px-3 py-1 text-[10px] uppercase font-bold text-blue-400 tracking-wider flex items-center justify-between">
-                    <span>BIM Studio Project</span>
+                    <span>Project File (.bsp)</span>
                     <span className="font-mono text-[9px] px-1 py-0.2 rounded bg-blue-500/20 text-blue-300 font-semibold">.bsp</span>
                   </div>
+
+                  <button
+                    id="menu-new-project"
+                    type="button"
+                    onClick={() => {
+                      setShowFileMenu(false);
+                      if (onNewProject) onNewProject();
+                      else onClearAllSheets?.();
+                    }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-slate-800 flex items-center justify-between text-slate-200 cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <FilePlus2 className="w-3.5 h-3.5 text-blue-400" />
+                      <div className="font-semibold text-white group-hover:text-blue-300">
+                        New Project
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-mono">Ctrl+N</span>
+                  </button>
+
+                  <button
+                    id="menu-open-project"
+                    type="button"
+                    onClick={() => {
+                      setShowFileMenu(false);
+                      handleTriggerOpenProject();
+                    }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-slate-800 flex items-center justify-between text-slate-200 cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <FolderOpen className="w-3.5 h-3.5 text-sky-400" />
+                      <div className="font-semibold text-white group-hover:text-sky-300">
+                        Open Project (.bsp)
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-mono">Ctrl+O</span>
+                  </button>
 
                   <button
                     id="menu-save-project"
@@ -215,17 +246,18 @@ export const Header: React.FC<HeaderProps> = ({
                       setShowFileMenu(false);
                       onSaveProject(false);
                     }}
-                    className="w-full text-left px-3 py-2 hover:bg-slate-800 flex items-center justify-between text-slate-200 cursor-pointer group"
+                    disabled={availableSheets.length === 0}
+                    className="w-full text-left px-3 py-1.5 hover:bg-slate-800 flex items-center justify-between text-slate-200 cursor-pointer group disabled:opacity-50"
                   >
                     <div className="flex items-center gap-2">
                       <Save className="w-3.5 h-3.5 text-blue-400" />
                       <div>
-                        <div className="font-semibold text-white group-hover:text-blue-300 transition-colors">
+                        <div className="font-semibold text-white group-hover:text-blue-300">
                           Save Project
                         </div>
-                        <div className="text-[10px] text-slate-400">
-                          {projectFileName ? `Save to ${projectFileName}` : 'Preserve full vector editable state'}
-                        </div>
+                        {projectFileName && (
+                          <div className="text-[10px] text-slate-400">{projectFileName}</div>
+                        )}
                       </div>
                     </div>
                     <span className="text-[10px] text-slate-500 font-mono">Ctrl+S</span>
@@ -238,44 +270,72 @@ export const Header: React.FC<HeaderProps> = ({
                       setShowFileMenu(false);
                       onSaveProject(true);
                     }}
-                    className="w-full text-left px-3 py-2 hover:bg-slate-800 flex items-center gap-2 text-slate-200 cursor-pointer group"
+                    disabled={availableSheets.length === 0}
+                    className="w-full text-left px-3 py-1.5 hover:bg-slate-800 flex items-center gap-2 text-slate-200 cursor-pointer group disabled:opacity-50"
                   >
                     <HardDrive className="w-3.5 h-3.5 text-blue-400" />
-                    <div>
-                      <div className="font-semibold text-white group-hover:text-blue-300 transition-colors">
-                        Save Project As...
-                      </div>
-                      <div className="text-[10px] text-slate-400">Save new .bsp file to chosen location</div>
+                    <div className="font-medium text-white group-hover:text-blue-300">
+                      Save Project As...
                     </div>
-                  </button>
-
-                  <button
-                    id="menu-open-project"
-                    type="button"
-                    onClick={() => {
-                      setShowFileMenu(false);
-                      handleTriggerOpenProject();
-                    }}
-                    className="w-full text-left px-3 py-2 hover:bg-slate-800 flex items-center justify-between text-slate-200 cursor-pointer group"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Upload className="w-3.5 h-3.5 text-sky-400" />
-                      <div>
-                        <div className="font-semibold text-white group-hover:text-sky-300 transition-colors">
-                          Open Project (.bsp)
-                        </div>
-                        <div className="text-[10px] text-slate-400">Restore complete editable session</div>
-                      </div>
-                    </div>
-                    <span className="text-[10px] text-slate-500 font-mono">Ctrl+O</span>
                   </button>
                 </div>
 
-                {/* 2. PDF & Document Export */}
+                {/* 2. PDF Document Section */}
                 <div className="py-1">
-                  <div className="px-3 py-1 text-[10px] uppercase font-bold text-slate-500 tracking-wider">
-                    Export Document
+                  <div className="px-3 py-1 text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                    PDF Document
                   </div>
+                  <button
+                    id="menu-open-pdf"
+                    type="button"
+                    onClick={() => {
+                      setShowFileMenu(false);
+                      handleOpenClick();
+                    }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-slate-800 flex items-center gap-2 text-slate-200 cursor-pointer"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Open / Import PDF...</span>
+                  </button>
+
+                  <button
+                    id="menu-save-pdf"
+                    type="button"
+                    onClick={() => {
+                      setShowFileMenu(false);
+                      onSaveToSource(false);
+                    }}
+                    disabled={availableSheets.length === 0}
+                    className="w-full text-left px-3 py-1.5 hover:bg-slate-800 flex items-center justify-between text-slate-200 cursor-pointer disabled:opacity-50"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Save className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Save PDF (to source location)</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-mono">Ctrl+Shift+S</span>
+                  </button>
+
+                  <button
+                    id="menu-save-pdf-as"
+                    type="button"
+                    onClick={() => {
+                      setShowFileMenu(false);
+                      onSaveToSource(true);
+                    }}
+                    disabled={availableSheets.length === 0}
+                    className="w-full text-left px-3 py-1.5 hover:bg-slate-800 flex items-center gap-2 text-slate-200 cursor-pointer disabled:opacity-50"
+                  >
+                    <HardDrive className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Save As New PDF...</span>
+                  </button>
+                </div>
+
+                {/* 3. Export & Deliverables (consolidated from header) */}
+                <div className="py-1">
+                  <div className="px-3 py-1 text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                    Export & Deliverables
+                  </div>
+
                   <button
                     id="menu-export-pdf-document"
                     type="button"
@@ -283,33 +343,143 @@ export const Header: React.FC<HeaderProps> = ({
                       setShowFileMenu(false);
                       onOpenExportModal();
                     }}
-                    className="w-full text-left px-3 py-2 hover:bg-slate-800 flex items-center justify-between text-slate-200 cursor-pointer group"
+                    disabled={availableSheets.length === 0}
+                    className="w-full text-left px-3 py-1.5 hover:bg-slate-800 flex items-center gap-2 text-slate-200 cursor-pointer group disabled:opacity-50"
                   >
-                    <div className="flex items-center gap-2">
-                      <Download className="w-3.5 h-3.5 text-emerald-400" />
-                      <div>
-                        <div className="font-semibold text-emerald-300 group-hover:text-emerald-200 transition-colors">
-                          Export PDF Document...
-                        </div>
-                        <div className="text-[10px] text-slate-400">Options for markups, scale & flatten</div>
+                    <Download className="w-3.5 h-3.5 text-emerald-400" />
+                    <div>
+                      <div className="font-semibold text-emerald-300 group-hover:text-emerald-200">
+                        Export PDF Document...
                       </div>
+                      <div className="text-[10px] text-slate-400">Options for sheet range, markup layers & flatten</div>
                     </div>
                   </button>
-                </div>
 
-                {/* 3. Document / Page Management */}
-                <div className="py-1">
                   <button
                     type="button"
                     onClick={() => {
                       setShowFileMenu(false);
-                      handleOpenClick();
+                      onExportPdf('edited');
                     }}
-                    className="w-full text-left px-3 py-1.5 hover:bg-slate-800 flex items-center gap-2 text-slate-300 cursor-pointer"
+                    disabled={availableSheets.length === 0}
+                    className="w-full text-left px-3 py-1.5 hover:bg-slate-800 flex items-center justify-between text-slate-200 cursor-pointer disabled:opacity-50"
                   >
-                    <Plus className="w-3.5 h-3.5 text-blue-400" />
-                    <span>Import PDF / Add Sheet...</span>
+                    <div className="flex items-center gap-2">
+                      <Download className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Download Current Sheet</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500">Live markups</span>
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowFileMenu(false);
+                      onExportPdf('all_sheets');
+                    }}
+                    disabled={availableSheets.length === 0}
+                    className="w-full text-left px-3 py-1.5 hover:bg-slate-800 flex items-center justify-between text-slate-200 cursor-pointer disabled:opacity-50"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Download className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Download All Sheets (Set PDF)</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500">All pages</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowFileMenu(false);
+                      onExportPdf('flattened');
+                    }}
+                    disabled={availableSheets.length === 0}
+                    className="w-full text-left px-3 py-1.5 hover:bg-slate-800 flex items-center justify-between text-slate-200 cursor-pointer disabled:opacity-50"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Download className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Download Flattened Archival PDF</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500">Submittal</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowFileMenu(false);
+                      onExportPdf('original');
+                    }}
+                    disabled={availableSheets.length === 0}
+                    className="w-full text-left px-3 py-1.5 hover:bg-slate-800 flex items-center gap-2 text-slate-300 cursor-pointer disabled:opacity-50"
+                  >
+                    <Download className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Download Original PDF</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowFileMenu(false);
+                      onExportPdf('json');
+                    }}
+                    disabled={availableSheets.length === 0}
+                    className="w-full text-left px-3 py-1.5 hover:bg-slate-800 flex items-center justify-between text-slate-300 cursor-pointer disabled:opacity-50"
+                  >
+                    <div className="flex items-center gap-2">
+                      <FileCode className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Export Markups (JSON)</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500">Coordinates</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowFileMenu(false);
+                      onExportPdf('report');
+                    }}
+                    disabled={availableSheets.length === 0}
+                    className="w-full text-left px-3 py-1.5 hover:bg-slate-800 flex items-center justify-between text-slate-300 cursor-pointer disabled:opacity-50"
+                  >
+                    <div className="flex items-center gap-2">
+                      <FileCheck className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Review Summary Report</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500">HTML/PDF</span>
+                  </button>
+                </div>
+
+                {/* 4. Sheet Management */}
+                <div className="py-1">
+                  {availableSheets.length > 0 && onRemoveCurrentSheet && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowFileMenu(false);
+                        onRemoveCurrentSheet();
+                      }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-red-950/40 text-red-400 hover:text-red-300 flex items-center gap-2 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Remove Current Sheet ({currentSheet.sheetNumber})</span>
+                    </button>
+                  )}
+
+                  {availableSheets.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowFileMenu(false);
+                        if (onNewProject) onNewProject();
+                        else onClearAllSheets?.();
+                      }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-red-950/40 text-red-400 hover:text-red-300 flex items-center gap-2 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Clear All Sheets</span>
+                    </button>
+                  )}
+
                   {onReloadSamples && (
                     <button
                       type="button"
@@ -327,6 +497,89 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             )}
           </div>
+
+          {/* New Project Button */}
+          <button
+            id="new-project-header-button"
+            onClick={() => (onNewProject ? onNewProject() : onClearAllSheets?.())}
+            title="Start a new project (Ctrl+N)"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 hover:border-slate-600 rounded-lg transition-all shadow-xs cursor-pointer"
+          >
+            <FilePlus2 className="w-3.5 h-3.5 text-blue-400" />
+            <span className="inline">New Project</span>
+          </button>
+
+          {/* Open Project (.bsp) Button */}
+          <button
+            id="open-project-header-button"
+            onClick={handleTriggerOpenProject}
+            title="Open saved .bsp project file (Ctrl+O)"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-sky-200 border border-slate-700 hover:border-sky-600/50 rounded-lg transition-all shadow-xs cursor-pointer"
+          >
+            <FolderOpen className="w-3.5 h-3.5 text-sky-400" />
+            <span className="inline">Open Project</span>
+          </button>
+
+          {/* Primary Save Project (.bsp) Button */}
+          <button
+            id="save-project-header-button"
+            onClick={() => onSaveProject(false)}
+            disabled={isSavingProject || availableSheets.length === 0}
+            title={
+              projectFileName
+                ? `Save editable project to "${projectFileName}" (Ctrl+S)`
+                : 'Save Project (.bsp) - Preserves all markups, polylines, calibrations & edits (Ctrl+S)'
+            }
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-all shadow-xs cursor-pointer disabled:opacity-50"
+          >
+            {isSavingProject ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-200" />
+            ) : (
+              <Save className="w-3.5 h-3.5 text-blue-100" />
+            )}
+            <span className="inline">
+              {isSavingProject ? 'Saving...' : 'Save Project'}
+            </span>
+          </button>
+
+          {/* Primary Open PDF Button */}
+          <button
+            id="open-pdf-header-button"
+            onClick={handleOpenClick}
+            title="Open architectural PDF or drawing from computer"
+            className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium rounded-lg transition-colors shadow-xs cursor-pointer"
+          >
+            <Upload className="w-3.5 h-3.5 text-slate-400" />
+            <span>Open PDF</span>
+          </button>
+
+          {/* Dedicated Save PDF Button (Direct source disk write) */}
+          <button
+            id="save-pdf-source-button"
+            onClick={() => onSaveToSource(false)}
+            disabled={isSavingToSource || availableSheets.length === 0}
+            title={
+              hasSourceHandle
+                ? `Save PDF directly back to "${sourceFileName}" on disk`
+                : sourceFileName
+                ? `Save PDF back to "${sourceFileName}"`
+                : 'Save PDF file'
+            }
+            className={`hidden sm:flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all shadow-xs cursor-pointer disabled:opacity-50 ${
+              hasSourceHandle
+                ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/40'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+            }`}
+          >
+            {isSavingToSource ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-300" />
+            ) : (
+              <HardDrive className={`w-3.5 h-3.5 ${hasSourceHandle ? 'text-white' : 'text-emerald-400'}`} />
+            )}
+            <span className="inline">
+              {isSavingToSource ? 'Saving...' : 'Save PDF'}
+            </span>
+          </button>
 
           <FileText className="w-4 h-4 text-slate-400 shrink-0 ml-1" />
           {availableSheets.length > 0 ? (
@@ -364,210 +617,6 @@ export const Header: React.FC<HeaderProps> = ({
             accept=".bsp,.json,application/json,text/plain,*/*"
             className="hidden"
           />
-
-          {/* Primary Save Project (.bsp) Button */}
-          <button
-            id="save-project-header-button"
-            onClick={() => onSaveProject(false)}
-            disabled={isSavingProject || availableSheets.length === 0}
-            title={
-              projectFileName
-                ? `Save editable project to "${projectFileName}" (Ctrl+S)`
-                : 'Save Project (.bsp) - Preserves all markups, polylines, calibrations & edits (Ctrl+S)'
-            }
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-all shadow-xs cursor-pointer disabled:opacity-50"
-          >
-            {isSavingProject ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-200" />
-            ) : (
-              <Save className="w-3.5 h-3.5 text-blue-100" />
-            )}
-            <span className="inline">
-              {isSavingProject ? 'Saving...' : 'Save Project'}
-            </span>
-          </button>
-
-          {/* Open Project (.bsp) Button */}
-          <button
-            id="open-project-header-button"
-            onClick={handleTriggerOpenProject}
-            title="Open saved .bsp project file (Ctrl+O)"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-sky-200 border border-slate-700 hover:border-sky-600/50 rounded-lg transition-all shadow-xs cursor-pointer"
-          >
-            <FolderOpen className="w-3.5 h-3.5 text-sky-400" />
-            <span className="inline">Open Project</span>
-          </button>
-
-          {/* Primary Open PDF Button */}
-          <button
-            onClick={handleOpenClick}
-            title="Open architectural PDF or drawing from computer"
-            className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium rounded-lg transition-colors shadow-xs cursor-pointer"
-          >
-            <Upload className="w-3.5 h-3.5 text-slate-400" />
-            <span>Open PDF</span>
-          </button>
-
-          {/* Dedicated Save PDF Button (Direct source disk write) */}
-          <button
-            id="save-pdf-source-button"
-            onClick={() => onSaveToSource(false)}
-            disabled={isSavingToSource || availableSheets.length === 0}
-            title={
-              hasSourceHandle
-                ? `Save PDF directly back to "${sourceFileName}" on disk`
-                : sourceFileName
-                ? `Save PDF back to "${sourceFileName}"`
-                : 'Save PDF file'
-            }
-            className={`hidden sm:flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all shadow-xs cursor-pointer disabled:opacity-50 ${
-              hasSourceHandle
-                ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/40'
-                : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
-            }`}
-          >
-            {isSavingToSource ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-300" />
-            ) : (
-              <HardDrive className={`w-3.5 h-3.5 ${hasSourceHandle ? 'text-white' : 'text-emerald-400'}`} />
-            )}
-            <span className="inline">
-              {isSavingToSource ? 'Saving...' : 'Save PDF'}
-            </span>
-          </button>
-
-          {/* Document Management Menu (Remove, Clear, Reset) */}
-          <div className="relative" ref={docMenuRef}>
-            <button
-              onClick={() => setShowDocMenu(!showDocMenu)}
-              title="Sheet and Document Options"
-              className="p-1.5 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors cursor-pointer"
-            >
-              <ChevronDown className="w-3.5 h-3.5" />
-            </button>
-
-            {showDocMenu && (
-              <div className="absolute left-0 top-full mt-1 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1.5 z-50 text-xs text-slate-200 animate-in fade-in slide-in-from-top-1 divide-y divide-slate-800">
-                <div className="py-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowDocMenu(false);
-                      onSaveProject(false);
-                    }}
-                    className="w-full text-left px-3 py-2 hover:bg-slate-800 flex items-center justify-between text-slate-200 cursor-pointer group"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Save className="w-3.5 h-3.5 text-blue-400" />
-                      <div>
-                        <div className="font-semibold text-white group-hover:text-blue-300">
-                          Save Project (.bsp)
-                        </div>
-                        <div className="text-[10px] text-slate-400">
-                          Preserve complete editable workspace
-                        </div>
-                      </div>
-                    </div>
-                    <span className="text-[10px] text-slate-500 font-mono">Ctrl+S</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowDocMenu(false);
-                      onSaveToSource(false);
-                    }}
-                    className="w-full text-left px-3 py-2 hover:bg-slate-800 flex items-center justify-between text-slate-200 cursor-pointer group"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Save className="w-3.5 h-3.5 text-emerald-400" />
-                      <div>
-                        <div className="font-semibold text-emerald-300 group-hover:text-emerald-200">
-                          Save to Source PDF
-                        </div>
-                        <div className="text-[10px] text-slate-400">
-                          {hasSourceHandle
-                            ? `Overwrites "${sourceFileName}" on disk`
-                            : 'Save project to original file location'}
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowDocMenu(false);
-                      onSaveToSource(true);
-                    }}
-                    className="w-full text-left px-3 py-2 hover:bg-slate-800 flex items-center gap-2 text-slate-200 cursor-pointer"
-                  >
-                    <HardDrive className="w-3.5 h-3.5 text-blue-400" />
-                    <div>
-                      <div className="font-medium text-slate-200">Save As New PDF...</div>
-                      <div className="text-[10px] text-slate-400">Choose a new folder or file name</div>
-                    </div>
-                  </button>
-                </div>
-
-                <div className="py-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowDocMenu(false);
-                      handleOpenClick();
-                    }}
-                    className="w-full text-left px-3 py-2 hover:bg-slate-800 flex items-center gap-2 text-slate-200 cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5 text-blue-400" />
-                    <span>Open / Add Another PDF</span>
-                  </button>
-
-                  {availableSheets.length > 0 && onRemoveCurrentSheet && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowDocMenu(false);
-                        onRemoveCurrentSheet();
-                      }}
-                      className="w-full text-left px-3 py-2 hover:bg-red-950/40 text-red-400 hover:text-red-300 flex items-center gap-2 cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Remove Current Sheet ({currentSheet.sheetNumber})</span>
-                    </button>
-                  )}
-
-                  {availableSheets.length > 0 && onClearAllSheets && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowDocMenu(false);
-                        onClearAllSheets();
-                      }}
-                      className="w-full text-left px-3 py-2 hover:bg-red-950/40 text-red-400 hover:text-red-300 flex items-center gap-2 cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Clear All Sheets (New Project)</span>
-                    </button>
-                  )}
-
-                  {onReloadSamples && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowDocMenu(false);
-                        onReloadSamples();
-                      }}
-                      className="w-full text-left px-3 py-2 hover:bg-slate-800 text-slate-400 hover:text-slate-200 flex items-center gap-2 cursor-pointer"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
-                      <span>Reload Sample BIM Project</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
         </div>
 
         {/* Scale Badge (Relevant in Drawing Mode) */}
@@ -684,142 +733,7 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="hidden md:inline">Review Report</span>
         </button>
 
-        {/* Export Dropdown Menu */}
-        <div className="relative flex items-center" ref={exportMenuRef}>
-          <div className="inline-flex rounded-lg shadow-sm bg-blue-600 hover:bg-blue-500 transition-colors divide-x divide-blue-700/60 overflow-hidden">
-            <button
-              id="header-export-pdf-button"
-              onClick={onOpenExportModal}
-              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700/40 transition-colors cursor-pointer"
-              title="Export PDF Document (Markup, Sheet Range, Flattening Options)"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Export PDF...</span>
-            </button>
-            <button
-              id="header-export-menu-arrow"
-              onClick={() => setShowExportMenu((prev) => !prev)}
-              className="px-1.5 py-1 text-white hover:bg-blue-700/40 transition-colors flex items-center justify-center cursor-pointer"
-              title="Quick Export Options & Formats"
-            >
-              <ChevronDown className="w-3 h-3 opacity-90" />
-            </button>
-          </div>
 
-          {showExportMenu && (
-            <div className="absolute right-0 top-full mt-1.5 w-68 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1.5 text-xs text-slate-200 z-50 divide-y divide-slate-800">
-              <div className="py-1">
-                <button
-                  onClick={() => {
-                    setShowExportMenu(false);
-                    onOpenExportModal();
-                  }}
-                  className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between group cursor-pointer"
-                >
-                  <div className="flex items-center gap-2">
-                    <Download className="w-3.5 h-3.5 text-emerald-400" />
-                    <div>
-                      <div className="font-semibold text-emerald-300 group-hover:text-emerald-200 transition-colors">
-                        Export PDF Document...
-                      </div>
-                      <div className="text-[10px] text-slate-400">Custom sheet range, markup layers & flatten</div>
-                    </div>
-                  </div>
-                </button>
-              </div>
-
-              <div className="px-3 py-1 text-[10px] uppercase font-bold text-slate-500 tracking-wider">
-                Quick PDF Downloads
-              </div>
-              <div className="py-1">
-                <button
-                  onClick={() => {
-                    onExportPdf('edited');
-                    setShowExportMenu(false);
-                  }}
-                  className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between group cursor-pointer"
-                >
-                  <div>
-                    <div className="font-semibold text-white group-hover:text-blue-400 transition-colors">Download Current Sheet</div>
-                    <div className="text-[10px] text-slate-400">Current sheet with live markup layers</div>
-                  </div>
-                  <Download className="w-3.5 h-3.5 text-blue-400" />
-                </button>
-
-                <button
-                  onClick={() => {
-                    onExportPdf('all_sheets');
-                    setShowExportMenu(false);
-                  }}
-                  className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between group cursor-pointer"
-                >
-                  <div>
-                    <div className="font-medium text-emerald-300 group-hover:text-emerald-200 transition-colors">Download All Sheets (Set PDF)</div>
-                    <div className="text-[10px] text-slate-400">Complete multi-page drawing package</div>
-                  </div>
-                  <Download className="w-3.5 h-3.5 text-emerald-400" />
-                </button>
-
-                <button
-                  onClick={() => {
-                    onExportPdf('flattened');
-                    setShowExportMenu(false);
-                  }}
-                  className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between group cursor-pointer"
-                >
-                  <div>
-                    <div className="font-medium text-amber-300 group-hover:text-amber-200 transition-colors">Download Flattened Archival PDF</div>
-                    <div className="text-[10px] text-slate-400">Baked annotations for submittal/print</div>
-                  </div>
-                  <Download className="w-3.5 h-3.5 text-amber-400" />
-                </button>
-
-                <button
-                  onClick={() => {
-                    onExportPdf('original');
-                    setShowExportMenu(false);
-                  }}
-                  className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between group cursor-pointer"
-                >
-                  <div>
-                    <div className="font-medium text-slate-300">Download Original PDF</div>
-                    <div className="text-[10px] text-slate-400">Without review annotations</div>
-                  </div>
-                </button>
-              </div>
-
-              <div className="py-1">
-                <button
-                  onClick={() => {
-                    onExportPdf('json');
-                    setShowExportMenu(false);
-                  }}
-                  className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between"
-                >
-                  <div>
-                    <div className="font-medium text-slate-300">Export Markups (JSON)</div>
-                    <div className="text-[10px] text-slate-400">Coordinates, tags, & takeoffs</div>
-                  </div>
-                  <FileCode className="w-3.5 h-3.5 text-indigo-400" />
-                </button>
-
-                <button
-                  onClick={() => {
-                    onExportPdf('report');
-                    setShowExportMenu(false);
-                  }}
-                  className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between"
-                >
-                  <div>
-                    <div className="font-medium text-slate-300">AEC Review Summary Report</div>
-                    <div className="text-[10px] text-slate-400">Printable HTML / PDF report</div>
-                  </div>
-                  <FileCheck className="w-3.5 h-3.5 text-emerald-400" />
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
 
         {/* Print */}
         <button

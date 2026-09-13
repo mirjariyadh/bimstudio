@@ -210,6 +210,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState<Point>({ x: 0, y: 0 });
   const [rotation, setRotation] = useState<number>(0);
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
 
   // Active Drawing Interactions
   const [currentPoints, setCurrentPoints] = useState<Point[]>([]);
@@ -1132,8 +1133,8 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
   // Mouse / Pointer Event Handlers
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    // Pan mode (middle click or space or Pan tool)
-    if (e.button === 1 || e.altKey || activeTool === 'pan') {
+    // Pan mode (middle click, alt key, spacebar held, or Pan tool)
+    if (e.button === 1 || e.altKey || isSpacePressed || activeTool === 'pan') {
       setIsPanning(true);
       setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
       return;
@@ -1558,45 +1559,120 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     }
   };
 
-  // Mouse wheel zoom
-  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
-    const newZoom = Math.min(8, Math.max(0.25, zoom * zoomFactor));
+  // Keyboard listener for Spacebar panning
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        document.activeElement?.tagName === 'INPUT' ||
+        document.activeElement?.tagName === 'TEXTAREA' ||
+        (document.activeElement as HTMLElement)?.isContentEditable
+      ) {
+        return;
+      }
+      if (e.code === 'Space' && !e.repeat) {
+        setIsSpacePressed(true);
+      }
+    };
 
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        setIsSpacePressed(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  // Minimum zoom calculation: dynamic for huge CAD/PDF sheets to ensure complete zoom-out
+  const getMinZoom = useCallback(() => {
     const container = containerRef.current;
-    if (!container) return;
+    const w = currentDrawing?.width || 1400;
+    const h = currentDrawing?.height || 950;
+    if (!container) return 0.001;
     const rect = container.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-
-    setPan({
-      x: mouseX - (mouseX - pan.x) * (newZoom / zoom),
-      y: mouseY - (mouseY - pan.y) * (newZoom / zoom),
-    });
-    setZoom(newZoom);
-  };
+    const cWidth = Math.max(rect.width || 800, 200);
+    const cHeight = Math.max(rect.height || 600, 200);
+    // Scale that fits the total drawing inside the viewport
+    const fitScale = Math.min((cWidth - 40) / w, (cHeight - 40) / h);
+    // Allow zooming out comfortably past fitScale down to 0.001 (0.1% for colossal architectural plans)
+    return Math.max(0.001, Math.min(0.05, fitScale * 0.2));
+  }, [currentDrawing?.width, currentDrawing?.height]);
 
   // Zoom helpers
-  const handleFitPage = () => {
+  const handleFitPage = useCallback(() => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container || !currentDrawing) return;
     const rect = container.getBoundingClientRect();
-    const scaleX = (rect.width - 60) / currentDrawing.width;
-    const scaleY = (rect.height - 60) / currentDrawing.height;
-    const newZoom = Math.min(scaleX, scaleY, 1.2);
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const padding = 40;
+    const w = currentDrawing.width || 1400;
+    const h = currentDrawing.height || 950;
+    const scaleX = (rect.width - padding) / w;
+    const scaleY = (rect.height - padding) / h;
+    const newZoom = Math.min(scaleX, scaleY, 2.0);
     setZoom(newZoom);
     setPan({
-      x: (rect.width - currentDrawing.width * newZoom) / 2,
-      y: (rect.height - currentDrawing.height * newZoom) / 2,
+      x: (rect.width - w * newZoom) / 2,
+      y: (rect.height - h * newZoom) / 2,
     });
-  };
+  }, [currentDrawing]);
+
+  // Automatically fit drawing on sheet change so user sees the entire sheet cleanly
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      handleFitPage();
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [currentDrawing?.id, handleFitPage]);
+
+  // Native non-passive wheel listener for smooth zoom without interference
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const onWheelNative = (e: WheelEvent) => {
+      e.preventDefault();
+      // Trackpad pinch gesture support (ctrlKey is true during pinch) or standard scroll wheel
+      const zoomFactor = e.ctrlKey
+        ? Math.exp(-e.deltaY * 0.01)
+        : e.deltaY < 0
+        ? 1.15
+        : 0.85;
+
+      const minZ = getMinZoom();
+      const maxZ = 16;
+      setZoom((prevZoom) => {
+        const nextZoom = Math.min(maxZ, Math.max(minZ, prevZoom * zoomFactor));
+        const rect = container.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        setPan((prevPan) => ({
+          x: mouseX - (mouseX - prevPan.x) * (nextZoom / prevZoom),
+          y: mouseY - (mouseY - prevPan.y) * (nextZoom / prevZoom),
+        }));
+
+        return nextZoom;
+      });
+    };
+
+    container.addEventListener('wheel', onWheelNative, { passive: false });
+    return () => {
+      container.removeEventListener('wheel', onWheelNative);
+    };
+  }, [getMinZoom]);
 
   const handleFitWidth = () => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container || !currentDrawing) return;
     const rect = container.getBoundingClientRect();
-    const newZoom = (rect.width - 60) / currentDrawing.width;
+    const minZ = getMinZoom();
+    const newZoom = Math.max(minZ, (rect.width - 60) / (currentDrawing.width || 1400));
     setZoom(newZoom);
     setPan({
       x: 30,
@@ -1633,10 +1709,11 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onDoubleClick={handleDoubleClick}
-        onWheel={handleWheel}
         className={`relative flex-1 w-full h-full overflow-hidden ${
-          activeTool === 'pan' || isPanning
-            ? 'cursor-grab active:cursor-grabbing'
+          isPanning
+            ? 'cursor-grabbing'
+            : isSpacePressed || activeTool === 'pan'
+            ? 'cursor-grab'
             : activeTool === 'select'
             ? 'cursor-default'
             : 'cursor-crosshair'
@@ -1889,20 +1966,26 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
           <div className="flex items-center gap-0.5 ml-1">
             <button
-              onClick={() => setZoom((z) => Math.max(0.25, z - 0.15))}
+              onClick={() => {
+                const minZ = getMinZoom();
+                setZoom((z) => Math.max(minZ, z * 0.8));
+              }}
               className="p-1 hover:bg-slate-800 text-slate-300 rounded"
+              title="Zoom Out"
             >
               <ZoomOut className="w-3.5 h-3.5" />
             </button>
             <button
-              onClick={() => setZoom(1)}
-              className="w-12 text-center font-mono text-[11px] text-slate-200 font-medium hover:text-white"
+              onClick={handleFitPage}
+              className="w-14 text-center font-mono text-[11px] text-slate-200 font-medium hover:text-white"
+              title="Click to Fit Page (or 100%)"
             >
               {Math.round(zoom * 100)}%
             </button>
             <button
-              onClick={() => setZoom((z) => Math.min(8, z + 0.15))}
+              onClick={() => setZoom((z) => Math.min(16, z * 1.25))}
               className="p-1 hover:bg-slate-800 text-slate-300 rounded"
+              title="Zoom In"
             >
               <ZoomIn className="w-3.5 h-3.5" />
             </button>
