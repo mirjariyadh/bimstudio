@@ -354,6 +354,7 @@ interface RightSidebarProps {
   onUpdateIssueStatus: (id: string, status: any) => void;
   onUpdateCountCategory?: (id: string, updates: Partial<CountCategory>) => void;
   onAddCountCategory?: (category: CountCategory) => void;
+  onUpdateMarkup?: (id: string, updates: Partial<MarkupItem>) => void;
 }
 
 export const RightSidebar: React.FC<RightSidebarProps> = ({
@@ -368,8 +369,13 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   onUpdateIssueStatus,
   onUpdateCountCategory,
   onAddCountCategory,
+  onUpdateMarkup,
 }) => {
   const [activeTab, setActiveTab] = useState<'ai' | 'markups' | 'issues' | 'takeoff' | 'ocr'>('ai');
+
+  // Polyline renaming state in takeoff tab
+  const [editingPolylineId, setEditingPolylineId] = useState<string | null>(null);
+  const [editPolylineName, setEditPolylineName] = useState('');
 
   // New Schedule Item form state
   const [showAddScheduleItem, setShowAddScheduleItem] = useState(false);
@@ -905,7 +911,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    const csv = exportTakeoffScheduleCsv(countCategories);
+                    const csv = exportTakeoffScheduleCsv(countCategories, markups);
                     const blob = new Blob([csv], { type: 'text/csv' });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
@@ -1160,6 +1166,102 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                 );
               })}
             </div>
+
+            {/* Polylines & Linear Runs Section */}
+            {markups.filter((m) => m.type === 'polyline').length > 0 && (
+              <div className="space-y-2 pt-2 border-t border-slate-800">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                    Polylines & Linear Runs ({markups.filter((m) => m.type === 'polyline').length})
+                  </span>
+                  <span className="text-[10px] text-sky-400 font-mono font-bold">
+                    Total:{' '}
+                    {markups
+                      .filter((m) => m.type === 'polyline' && m.measurementValue)
+                      .reduce((sum, m) => sum + (m.measurementValue || 0), 0)
+                      .toFixed(2)}{' '}
+                    m
+                  </span>
+                </div>
+                <div className="space-y-1.5">
+                  {markups
+                    .filter((m) => m.type === 'polyline')
+                    .map((p, idx) => {
+                      const isEditing = editingPolylineId === p.id;
+                      const displayName = p.name || p.text || `Polyline ${idx + 1}`;
+                      return (
+                        <div
+                          key={p.id}
+                          className="p-2 bg-slate-950 border border-slate-800 rounded-lg text-xs space-y-1 hover:border-slate-700 transition-colors"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span
+                                className="w-2.5 h-2.5 rounded-full shrink-0"
+                                style={{ backgroundColor: p.strokeColor }}
+                              />
+                              {isEditing ? (
+                                <input
+                                  type="text"
+                                  value={editPolylineName}
+                                  onChange={(e) => setEditPolylineName(e.target.value)}
+                                  onBlur={() => {
+                                    if (editPolylineName.trim()) {
+                                      onUpdateMarkup?.(p.id, {
+                                        name: editPolylineName.trim(),
+                                        text: editPolylineName.trim(),
+                                      });
+                                    }
+                                    setEditingPolylineId(null);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      if (editPolylineName.trim()) {
+                                        onUpdateMarkup?.(p.id, {
+                                          name: editPolylineName.trim(),
+                                          text: editPolylineName.trim(),
+                                        });
+                                      }
+                                      setEditingPolylineId(null);
+                                    }
+                                  }}
+                                  autoFocus
+                                  className="bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500 w-32"
+                                />
+                              ) : (
+                                <span className="font-semibold text-slate-200 truncate max-w-[130px]" title={displayName}>
+                                  {displayName}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="font-mono font-bold text-sky-400 bg-sky-950/40 px-1.5 py-0.5 rounded border border-sky-800/40 text-[11px]">
+                                {p.formattedMeasurement ||
+                                  `${p.measurementValue?.toFixed(2) || '0'} ${p.measurementUnit || 'm'}`}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingPolylineId(p.id);
+                                  setEditPolylineName(displayName);
+                                }}
+                                className="p-0.5 text-slate-500 hover:text-slate-300 rounded hover:bg-slate-800 transition-colors"
+                                title="Rename Polyline"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between text-[10px] text-slate-500">
+                            <span>{p.discipline || 'Architectural'}</span>
+                            <span>Sheet Page {p.pageIndex + 1}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
 
             {/* Total Estimated Project Budget & Area Takeoff */}
             <div className="bg-slate-950 border border-slate-800 p-3 rounded-lg space-y-2">

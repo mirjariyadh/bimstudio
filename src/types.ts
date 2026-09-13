@@ -137,6 +137,7 @@ export interface MarkupItem {
   countCategory?: string;
   countIndex?: number;
   linkedIssueId?: string;
+  name?: string; // Custom polyline or markup name / label
 }
 
 export interface CropPreset {
@@ -284,3 +285,48 @@ export interface DrawingAnalysisResult {
   equipmentTags: string[];
   confidence: string;
 }
+
+export interface BspProjectSheetData {
+  id: string;
+  sheetInfo: DrawingSheetInfo;
+  width: number;
+  height: number;
+  extractedText: string;
+  revisionHistory?: RevisionHistoryItem[];
+  sampleId?: string;
+  dataUrl?: string;
+}
+
+export interface BspProjectFile {
+  version: string;
+  format: 'bim-studio-project';
+  projectName: string;
+  savedAt: string;
+  sheets: BspProjectSheetData[];
+  currentSheetId: string;
+  markups: MarkupItem[];
+  issues: IssueItem[];
+  pageCalibrations: Record<number, PageScaleCalibration>;
+  countCategories: CountCategory[];
+  customStamps?: CustomStampConfig[];
+  projectSettings?: {
+    workspaceMode?: AppWorkspaceMode;
+    activeTool?: ToolType;
+    colorCategory?: MarkupColorCategory;
+    strokeWidth?: number;
+    opacity?: number;
+    unit?: LengthUnit;
+    snappingEnabled?: boolean;
+    activePolylineName?: string;
+  };
+  diffReport?: DiffReport;
+}
+
+export interface ExportPdfModalOptions {
+  includeMarkups: boolean;
+  includeMeasurements: boolean;
+  includeStamps: boolean;
+  flattenMarkups: boolean;
+  scope: 'current' | 'all';
+}
+

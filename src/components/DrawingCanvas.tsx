@@ -179,6 +179,7 @@ interface DrawingCanvasProps {
   snappingEnabled: boolean;
   activeCountCategory: string;
   countCategories: Array<{ id: string; name: string; color: string; count: number }>;
+  activePolylineName?: string;
 }
 
 export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
@@ -197,6 +198,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   snappingEnabled,
   activeCountCategory,
   countCategories,
+  activePolylineName = '',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const baseCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -442,15 +444,19 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             }
             ctx.stroke();
 
-            // Measurement badge at end
+            // Measurement badge at end (with line name if set)
             const last = m.points[m.points.length - 1];
-            if (m.formattedMeasurement) {
+            if (m.formattedMeasurement || m.name) {
+              const labelText = m.name
+                ? `${m.name}: ${m.formattedMeasurement || ''}`
+                : `L: ${m.formattedMeasurement}`;
               ctx.font = 'bold 11px Inter, monospace';
+              const textWidth = ctx.measureText(labelText).width;
               ctx.fillStyle = '#0f172a';
-              ctx.fillRect(last.x + 8, last.y - 12, 100, 22);
+              ctx.fillRect(last.x + 8, last.y - 12, textWidth + 14, 22);
               ctx.fillStyle = '#38bdf8';
               ctx.textAlign = 'left';
-              ctx.fillText(`L: ${m.formattedMeasurement}`, last.x + 14, last.y + 4);
+              ctx.fillText(labelText, last.x + 14, last.y + 4);
             }
           }
           break;
@@ -1489,6 +1495,8 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       const totPx = calculatePolylineLength(currentPoints);
       const realLen = pixelsToRealDistance(totPx, calibration);
       const formatted = formatDistance(realLen, unit);
+      const polyCount = markups.filter((m) => m.type === 'polyline').length + 1;
+      const polyName = activePolylineName?.trim() || `Polyline ${polyCount}`;
 
       onAddMarkup({
         id: `M-${String(markups.length + 1).padStart(3, '0')}`,
@@ -1504,6 +1512,8 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         measurementValue: realLen,
         measurementUnit: unit,
         formattedMeasurement: formatted,
+        name: polyName,
+        text: polyName,
         status: 'Open',
         discipline: currentDrawing.sheetInfo.discipline,
       });
@@ -1581,12 +1591,21 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     });
   };
 
-  // Save edited markup text
+  // Save edited markup text / polyline name
   const handleSaveEditedText = () => {
     if (editingMarkupId) {
-      onUpdateMarkup(editingMarkupId, {
-        text: editTextValue.trim() || 'Note',
-      });
+      const target = markups.find((m) => m.id === editingMarkupId);
+      const trimmed = editTextValue.trim();
+      if (target?.type === 'polyline') {
+        onUpdateMarkup(editingMarkupId, {
+          name: trimmed || 'Polyline',
+          text: trimmed || 'Polyline',
+        });
+      } else {
+        onUpdateMarkup(editingMarkupId, {
+          text: trimmed || 'Note',
+        });
+      }
       setEditingMarkupId(null);
       setEditTextValue('');
     }
@@ -1665,7 +1684,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             >
               <Copy className="w-4 h-4" />
             </button>
-            {['textbox', 'stickynote', 'callout', 'revision_cloud'].includes(
+            {['textbox', 'stickynote', 'callout', 'revision_cloud', 'polyline'].includes(
               markups.find((m) => m.id === selectedMarkupId)?.type || ''
             ) && (
               <button
@@ -1676,14 +1695,14 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
                   const target = markups.find((m) => m.id === selectedMarkupId);
                   if (target) {
                     setEditingMarkupId(target.id);
-                    setEditTextValue(target.text || '');
+                    setEditTextValue(target.name || target.text || '');
                   }
                 }}
-                title="Edit Text Content"
+                title={markups.find((m) => m.id === selectedMarkupId)?.type === 'polyline' ? 'Edit Polyline Name' : 'Edit Text Content'}
                 className="flex items-center gap-1 px-2 py-1 bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 hover:text-white rounded-lg transition-colors cursor-pointer border border-blue-500/40 text-xs font-semibold"
               >
                 <Edit3 className="w-3.5 h-3.5" />
-                <span>Edit Text</span>
+                <span>{markups.find((m) => m.id === selectedMarkupId)?.type === 'polyline' ? 'Rename Line' : 'Edit Text'}</span>
               </button>
             )}
             <button

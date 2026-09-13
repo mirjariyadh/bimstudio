@@ -192,28 +192,52 @@ export function generatePrintableReportHtml(
 }
 
 export function exportTakeoffScheduleCsv(
-  categories: Array<{ id: string; name: string; count: number; scheduleCode?: string; unitCost?: number; discipline?: string }>
+  categories: Array<{ id: string; name: string; count: number; scheduleCode?: string; unitCost?: number; discipline?: string }>,
+  polylines?: MarkupItem[]
 ): string {
-  const headers = ['Schedule Code', 'Item Name', 'Discipline', 'Quantity (Count)', 'Unit Cost ($)', 'Subtotal ($)'];
-  const rows = categories.map((c) => {
+  const headers = ['Schedule Code / ID', 'Item Name', 'Type', 'Discipline', 'Quantity / Length', 'Unit', 'Unit Cost ($)', 'Subtotal ($)'];
+  
+  const countRows = categories.map((c) => {
     const qty = c.count || 0;
     const unitCost = c.unitCost !== undefined ? c.unitCost : 0;
     const total = qty * unitCost;
     return [
       `"${(c.scheduleCode || c.id.toUpperCase()).replace(/"/g, '""')}"`,
       `"${c.name.replace(/"/g, '""')}"`,
+      `"Count Item"`,
       `"${(c.discipline || 'Architectural').replace(/"/g, '""')}"`,
       qty,
+      `"EA"`,
       unitCost.toFixed(2),
       total.toFixed(2),
     ];
   });
 
+  const polylineRows = (polylines || [])
+    .filter((m) => m.type === 'polyline')
+    .map((p, idx) => {
+      const code = `PL-${String(idx + 1).padStart(3, '0')}`;
+      const name = p.name || p.text || `Polyline ${idx + 1}`;
+      const lenVal = p.measurementValue !== undefined ? p.measurementValue.toFixed(2) : (p.formattedMeasurement || '-');
+      const unitStr = p.measurementUnit || 'm';
+      return [
+        `"${code}"`,
+        `"${name.replace(/"/g, '""')}"`,
+        `"Polyline Linear"`,
+        `"${(p.discipline || 'Architectural').replace(/"/g, '""')}"`,
+        `"${lenVal}"`,
+        `"${unitStr}"`,
+        `"-"`,
+        `"-"`,
+      ];
+    });
+
   const totalCost = categories.reduce((sum, c) => sum + (c.count || 0) * (c.unitCost || 0), 0);
   const totalQty = categories.reduce((sum, c) => sum + (c.count || 0), 0);
-  const summaryRow = ['"TOTAL"', '"All Scheduled Items"', '""', totalQty, '""', totalCost.toFixed(2)];
+  const summaryRow = ['"TOTAL"', '"All Scheduled Count Items"', '""', '""', totalQty, '"EA"', '""', totalCost.toFixed(2)];
 
-  return [headers.join(','), ...rows.map((r) => r.join(',')), summaryRow.join(',')].join('\n');
+  const allRows = [...countRows, ...polylineRows, summaryRow];
+  return [headers.join(','), ...allRows.map((r) => r.join(','))].join('\n');
 }
 
 export const generateReviewSummaryHtml = generatePrintableReportHtml;

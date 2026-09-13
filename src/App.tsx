@@ -30,6 +30,7 @@ import { PageNumberingModal } from './components/editPdf/PageNumberingModal';
 import { DocumentPropertiesModal } from './components/editPdf/DocumentPropertiesModal';
 import { FlattenModal } from './components/editPdf/FlattenModal';
 import { ClearMarkupsModal } from './components/ClearMarkupsModal';
+import { ExportPdfModal } from './components/ExportPdfModal';
 import { OpenPdfModal } from './components/OpenPdfModal';
 import { EmptyWorkspace } from './components/EmptyWorkspace';
 import { MobileDeviceWarning } from './components/MobileDeviceWarning';
@@ -48,11 +49,19 @@ import {
   HeaderFooterConfig,
   PageNumberingConfig,
   DocumentProperties,
+  ExportPdfModalOptions,
 } from './types';
 import { ALL_SAMPLE_DRAWINGS, SampleDrawing } from './services/sampleDrawings';
 import { downloadFile } from './services/exportService';
 import { exportPdfDocument } from './services/pdfExportService';
 import { resolveStampVariables } from './services/stampService';
+import {
+  saveBspFile,
+  parseBspFile,
+  openBspFromFilePicker,
+  createBspProject,
+  restoreSheetsFromBsp,
+} from './services/bspProjectService';
 import {
   isFileSystemAccessSupported,
   pickPdfWithNativeHandle,
@@ -237,6 +246,7 @@ export default function App() {
   const [opacity, setOpacity] = useState<number>(1);
   const [unit, setUnit] = useState<LengthUnit>('m');
   const [snappingEnabled, setSnappingEnabled] = useState<boolean>(true);
+  const [activePolylineName, setActivePolylineName] = useState<string>('Pipe Run 01');
 
   // Standard Mode Search & View State
   const [searchQuery, setSearchQuery] = useState('');
@@ -361,6 +371,14 @@ export default function App() {
   const [sourceFileName, setSourceFileName] = useState<string>('Sample_BIM_Project.pdf');
   const [isSavingToSource, setIsSavingToSource] = useState<boolean>(false);
   const [, setLastSavedTime] = useState<string | null>(null);
+
+  // BIM Studio Project (.bsp) File Handle & State
+  const [projectFileHandle, setProjectFileHandle] = useState<FileSystemFileHandle | null>(null);
+  const [projectFileName, setProjectFileName] = useState<string>('Sample_BIM_Project.bsp');
+  const [isSavingProject, setIsSavingProject] = useState<boolean>(false);
+
+  // Export PDF Modal State
+  const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
 
   // Active current drawing object
   const currentDrawingIndex = sheets.findIndex((s) => s.id === currentSheetId);
@@ -1024,6 +1042,148 @@ export default function App() {
   const saveToSourceRef = useRef(handleSaveToSourceLocation);
   saveToSourceRef.current = handleSaveToSourceLocation;
 
+  // BIM Studio Project (.bsp) Save & Load handlers
+  const handleSaveProject = async (forceSaveAs = false) => {
+    setIsSavingProject(true);
+    try {
+      addToast('Saving Project', 'Compiling complete BIM Studio project package (.bsp)...', 'info');
+      const bspData = await createBspProject({
+        projectName: (projectFileName || 'BIM_Project').replace(/\.bsp$/i, ''),
+        sheets,
+        currentSheetId,
+        markups,
+        issues,
+        pageCalibrations,
+        countCategories,
+        projectSettings: {
+          workspaceMode,
+          activeTool,
+          colorCategory,
+          strokeWidth,
+          opacity,
+          unit,
+          snappingEnabled,
+          activePolylineName,
+        },
+      });
+
+      const result = await saveBspFile(
+        bspData,
+        projectFileName,
+        forceSaveAs ? undefined : (projectFileHandle || undefined)
+      );
+
+      if (result.handle) {
+        setProjectFileHandle(result.handle);
+      }
+      setProjectFileName(result.filename);
+      setAutosaveStatus('saved');
+      addToast(
+        'Project Saved (.bsp)',
+        `Saved full editable workspace to "${result.filename}". All markups, polylines, and calibrations preserved.`,
+        'success'
+      );
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        addToast('Save Cancelled', 'Project save was cancelled.', 'info');
+        return;
+      }
+      console.error('Failed to save BSP project:', err);
+      addToast('Project Save Failed', err?.message || 'Could not save .bsp project file.', 'warning');
+    } finally {
+      setIsSavingProject(false);
+    }
+  };
+
+  const saveProjectRef = useRef(handleSaveProject);
+  saveProjectRef.current = handleSaveProject;
+
+  const handleOpenProjectFile = async (file: File, handle?: FileSystemFileHandle) => {
+    try {
+      addToast('Opening Project', `Loading "${file.name}"...`, 'info');
+      const project = await parseBspFile(file);
+      const loadedSheets = await restoreSheetsFromBsp(project.sheets);
+
+      if (loadedSheets.length > 0) {
+        setSheets(loadedSheets);
+        setCurrentSheetId(project.currentSheetId || loadedSheets[0].id);
+      }
+
+      setMarkups(project.markups || []);
+      setUndoStack([]);
+      setRedoStack([]);
+
+      if (project.issues) setIssues(project.issues);
+      if (project.pageCalibrations) setPageCalibrations(project.pageCalibrations);
+      if (project.countCategories) setCountCategories(project.countCategories);
+
+      if (handle) {
+        setProjectFileHandle(handle);
+      }
+      setProjectFileName(file.name);
+      setAutosaveStatus('saved');
+
+      addToast(
+        'Project Restored',
+        `Successfully opened "${file.name}". Restored ${loadedSheets.length} sheet(s) and ${(project.markups || []).length} markup(s) in editable vector format.`,
+        'success'
+      );
+    } catch (err: any) {
+      console.error('Failed to parse BSP project:', err);
+      addToast('Open Project Error', err?.message || 'Invalid or corrupt .bsp project file.', 'warning');
+    }
+  };
+
+  const handleOpenProjectPrompt = async () => {
+    if (isFileSystemAccessSupported()) {
+      const picked = await openBspFromFilePicker();
+      if (picked) {
+        await handleOpenProjectFile(picked.file, picked.handle);
+      }
+    }
+  };
+
+  // Export PDF with custom options from modal
+  const handleConfirmExportPdfModal = async (options: ExportPdfModalOptions) => {
+    if (!currentDrawing) {
+      addToast('No Active Sheet', 'Please open a sheet to export.', 'warning');
+      return;
+    }
+    try {
+      addToast('Exporting PDF', 'Compiling PDF document with selected options...', 'info');
+      const targetSheets = options.scope === 'all' ? sheets : [currentDrawing];
+
+      let exportMarkups = options.includeMarkups ? [...markups] : [];
+      if (!options.includeMeasurements) {
+        exportMarkups = exportMarkups.filter(
+          (m) => !['distance', 'polyline', 'area', 'dimension'].includes(m.type)
+        );
+      }
+      if (!options.includeStamps) {
+        exportMarkups = exportMarkups.filter((m) => m.type !== 'stamp');
+      }
+
+      const pdfBlob = await exportPdfDocument({
+        sheets: targetSheets,
+        markups: exportMarkups,
+        mode: options.flattenMarkups ? 'flattened' : 'edited',
+        countCategories,
+      });
+
+      const baseName = (currentDrawing.sheetInfo.projectName || currentDrawing.sheetInfo.title || 'Drawing').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const fileName = options.scope === 'all'
+        ? `${baseName}_Complete_Set_${options.flattenMarkups ? 'Flattened' : 'Export'}.pdf`
+        : `${(currentDrawing.sheetInfo.sheetNumber || 'Sheet')}_${options.flattenMarkups ? 'Flattened' : 'Export'}.pdf`;
+
+      downloadFile(pdfBlob, fileName, 'application/pdf');
+      setIsExportModalOpen(false);
+      addToast('PDF Exported', `Successfully exported "${fileName}".`, 'success');
+    } catch (err: any) {
+      console.error('PDF Export modal error:', err);
+      addToast('Export Failed', err?.message || 'Could not compile PDF document.', 'warning');
+    }
+  };
+
   // 15. Export with various types
   const handleExportPdf = async (
     type: 'edited' | 'original' | 'flattened' | 'all_sheets' | 'json' | 'report' = 'edited'
@@ -1087,10 +1247,14 @@ export default function App() {
         return;
       }
 
-      // Ctrl+S / Cmd+S: Save PDF to original source location
+      // Ctrl+S / Cmd+S: Save Project (.bsp) or with Shift save PDF
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        saveToSourceRef.current(false);
+        if (e.shiftKey) {
+          saveToSourceRef.current(false);
+        } else {
+          saveProjectRef.current(false);
+        }
         return;
       }
 
@@ -1181,12 +1345,18 @@ export default function App() {
         isAiPanelOpen={isRightSidebarOpen}
         autosaveStatus={autosaveStatus}
         onExportPdf={handleExportPdf}
+        onOpenExportModal={() => setIsExportModalOpen(true)}
         onPrint={handlePrint}
         scaleString={currentCalibration.scaleRatioString}
         onSaveToSource={handleSaveToSourceLocation}
         isSavingToSource={isSavingToSource}
         hasSourceHandle={Boolean(sourceFileHandle)}
         sourceFileName={sourceFileName}
+        onSaveProject={handleSaveProject}
+        isSavingProject={isSavingProject}
+        projectFileName={projectFileName}
+        onOpenProjectPrompt={handleOpenProjectPrompt}
+        onOpenProjectFile={(file) => handleOpenProjectFile(file)}
       />
 
       {/* 2. Dynamic Mode Toolbar */}
@@ -1224,6 +1394,8 @@ export default function App() {
           onChangeUnit={(u) => setUnit(u)}
           snappingEnabled={snappingEnabled}
           onToggleSnapping={() => setSnappingEnabled((s) => !s)}
+          activePolylineName={activePolylineName}
+          onChangePolylineName={(name) => setActivePolylineName(name)}
           activeCountCategory={activeCountCategory}
           onChangeCountCategory={(cat) => setActiveCountCategory(cat)}
           countCategories={countCategories}
@@ -1302,6 +1474,7 @@ export default function App() {
             calibration={currentCalibration}
             onCompleteCalibration={handleCompleteCalibration}
             snappingEnabled={snappingEnabled}
+            activePolylineName={activePolylineName}
             activeCountCategory={activeCountCategory}
             countCategories={countCategories}
           />
@@ -1554,6 +1727,15 @@ export default function App() {
         currentSheetTitle={currentDrawing?.sheetInfo.title || 'Technical Drawing'}
         currentSheetMarkupCount={pageMarkups.length}
         totalProjectMarkupCount={markups.length}
+      />
+
+      {/* Export PDF Modal */}
+      <ExportPdfModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        onConfirmExport={handleConfirmExportPdfModal}
+        currentSheet={activeSheetInfo}
+        sheetCount={sheets.length}
       />
 
       {/* Open PDF Modal: Replace vs Append */}

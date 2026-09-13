@@ -40,6 +40,13 @@ interface HeaderProps {
   onSelectSheet: (id: string) => void;
   onUploadPdf: (file: File) => void;
   onOpenNativePicker?: () => void;
+  // BSP Project (.bsp)
+  onSaveProject: (forceSaveAs?: boolean) => void;
+  isSavingProject?: boolean;
+  projectFileName?: string;
+  onOpenProjectPrompt: () => void;
+  onOpenProjectFile?: (file: File) => void;
+  // Source PDF saving
   onSaveToSource: (forceSaveAs?: boolean) => void;
   isSavingToSource?: boolean;
   sourceFileName?: string;
@@ -57,6 +64,7 @@ interface HeaderProps {
   isAiPanelOpen: boolean;
   autosaveStatus: 'saved' | 'saving' | 'unsaved';
   onExportPdf: (type?: 'edited' | 'original' | 'flattened' | 'all_sheets' | 'json' | 'report') => void;
+  onOpenExportModal: () => void;
   onPrint: () => void;
   scaleString: string;
 }
@@ -67,6 +75,11 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectSheet,
   onUploadPdf,
   onOpenNativePicker,
+  onSaveProject,
+  isSavingProject = false,
+  projectFileName = '',
+  onOpenProjectPrompt,
+  onOpenProjectFile,
   onSaveToSource,
   isSavingToSource = false,
   sourceFileName = '',
@@ -84,17 +97,24 @@ export const Header: React.FC<HeaderProps> = ({
   isAiPanelOpen,
   autosaveStatus,
   onExportPdf,
+  onOpenExportModal,
   onPrint,
   scaleString,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const bspFileInputRef = useRef<HTMLInputElement>(null);
+  const [showFileMenu, setShowFileMenu] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showDocMenu, setShowDocMenu] = useState(false);
+  const fileMenuRef = useRef<HTMLDivElement>(null);
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const docMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
+      if (fileMenuRef.current && !fileMenuRef.current.contains(e.target as Node)) {
+        setShowFileMenu(false);
+      }
       if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
         setShowExportMenu(false);
       }
@@ -112,11 +132,27 @@ export const Header: React.FC<HeaderProps> = ({
     }
   };
 
+  const handleBspFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      if (onOpenProjectFile) {
+        onOpenProjectFile(e.target.files[0]);
+      }
+    }
+  };
+
   const handleOpenClick = () => {
     if (onOpenNativePicker) {
       onOpenNativePicker();
     } else {
       fileInputRef.current?.click();
+    }
+  };
+
+  const handleTriggerOpenProject = () => {
+    if (onOpenProjectPrompt) {
+      onOpenProjectPrompt();
+    } else {
+      bspFileInputRef.current?.click();
     }
   };
 
@@ -143,7 +179,149 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Sheet / Drawing Selector & Document Actions */}
         <div className="flex items-center gap-1.5">
-          <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+          {/* File Menu Dropdown (Save Project, Save As, Open Project, Export) */}
+          <div className="relative" ref={fileMenuRef}>
+            <button
+              id="file-menu-dropdown-button"
+              onClick={() => setShowFileMenu((prev) => !prev)}
+              title="File & Project Operations"
+              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-700 rounded-lg transition-colors cursor-pointer"
+            >
+              <FolderKanban className="w-3.5 h-3.5 text-blue-400" />
+              <span>File</span>
+              <ChevronDown className="w-3 h-3 text-slate-400" />
+            </button>
+
+            {showFileMenu && (
+              <div className="absolute left-0 top-full mt-1.5 w-68 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1.5 z-50 text-xs text-slate-200 divide-y divide-slate-800 animate-in fade-in slide-in-from-top-1">
+                {/* 1. BIM Studio Project (.bsp) Section */}
+                <div className="py-1">
+                  <div className="px-3 py-1 text-[10px] uppercase font-bold text-blue-400 tracking-wider flex items-center justify-between">
+                    <span>BIM Studio Project</span>
+                    <span className="font-mono text-[9px] px-1 py-0.2 rounded bg-blue-500/20 text-blue-300 font-semibold">.bsp</span>
+                  </div>
+
+                  <button
+                    id="menu-save-project"
+                    type="button"
+                    onClick={() => {
+                      setShowFileMenu(false);
+                      onSaveProject(false);
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-800 flex items-center justify-between text-slate-200 cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Save className="w-3.5 h-3.5 text-blue-400" />
+                      <div>
+                        <div className="font-semibold text-white group-hover:text-blue-300 transition-colors">
+                          Save Project
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          {projectFileName ? `Save to ${projectFileName}` : 'Preserve full vector editable state'}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-mono">Ctrl+S</span>
+                  </button>
+
+                  <button
+                    id="menu-save-project-as"
+                    type="button"
+                    onClick={() => {
+                      setShowFileMenu(false);
+                      onSaveProject(true);
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-800 flex items-center gap-2 text-slate-200 cursor-pointer group"
+                  >
+                    <HardDrive className="w-3.5 h-3.5 text-blue-400" />
+                    <div>
+                      <div className="font-semibold text-white group-hover:text-blue-300 transition-colors">
+                        Save Project As...
+                      </div>
+                      <div className="text-[10px] text-slate-400">Save new .bsp file to chosen location</div>
+                    </div>
+                  </button>
+
+                  <button
+                    id="menu-open-project"
+                    type="button"
+                    onClick={() => {
+                      setShowFileMenu(false);
+                      handleTriggerOpenProject();
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-800 flex items-center justify-between text-slate-200 cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Upload className="w-3.5 h-3.5 text-sky-400" />
+                      <div>
+                        <div className="font-semibold text-white group-hover:text-sky-300 transition-colors">
+                          Open Project (.bsp)
+                        </div>
+                        <div className="text-[10px] text-slate-400">Restore complete editable session</div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-mono">Ctrl+O</span>
+                  </button>
+                </div>
+
+                {/* 2. PDF & Document Export */}
+                <div className="py-1">
+                  <div className="px-3 py-1 text-[10px] uppercase font-bold text-slate-500 tracking-wider">
+                    Export Document
+                  </div>
+                  <button
+                    id="menu-export-pdf-document"
+                    type="button"
+                    onClick={() => {
+                      setShowFileMenu(false);
+                      onOpenExportModal();
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-800 flex items-center justify-between text-slate-200 cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Download className="w-3.5 h-3.5 text-emerald-400" />
+                      <div>
+                        <div className="font-semibold text-emerald-300 group-hover:text-emerald-200 transition-colors">
+                          Export PDF Document...
+                        </div>
+                        <div className="text-[10px] text-slate-400">Options for markups, scale & flatten</div>
+                      </div>
+                    </div>
+                  </button>
+                </div>
+
+                {/* 3. Document / Page Management */}
+                <div className="py-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowFileMenu(false);
+                      handleOpenClick();
+                    }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-slate-800 flex items-center gap-2 text-slate-300 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Import PDF / Add Sheet...</span>
+                  </button>
+                  {onReloadSamples && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowFileMenu(false);
+                        onReloadSamples();
+                      }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-200 flex items-center gap-2 cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Reload Sample BIM Project</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <FileText className="w-4 h-4 text-slate-400 shrink-0 ml-1" />
           {availableSheets.length > 0 ? (
             <select
               value={currentSheet.id}
@@ -171,29 +349,60 @@ export const Header: React.FC<HeaderProps> = ({
             className="hidden"
           />
 
+          {/* Hidden File Input for .bsp Project */}
+          <input
+            type="file"
+            ref={bspFileInputRef}
+            onChange={handleBspFileChange}
+            accept=".bsp,application/json"
+            className="hidden"
+          />
+
+          {/* Primary Save Project (.bsp) Button */}
+          <button
+            id="save-project-header-button"
+            onClick={() => onSaveProject(false)}
+            disabled={isSavingProject || availableSheets.length === 0}
+            title={
+              projectFileName
+                ? `Save editable project to "${projectFileName}" (Ctrl+S)`
+                : 'Save Project (.bsp) - Preserves all markups, polylines, calibrations & edits (Ctrl+S)'
+            }
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-all shadow-xs cursor-pointer disabled:opacity-50"
+          >
+            {isSavingProject ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-200" />
+            ) : (
+              <Save className="w-3.5 h-3.5 text-blue-100" />
+            )}
+            <span className="inline">
+              {isSavingProject ? 'Saving...' : 'Save Project'}
+            </span>
+          </button>
+
           {/* Primary Open PDF Button */}
           <button
             onClick={handleOpenClick}
             title="Open architectural PDF or drawing from computer"
-            className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg transition-colors shadow-xs cursor-pointer"
+            className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium rounded-lg transition-colors shadow-xs cursor-pointer"
           >
-            <Upload className="w-3.5 h-3.5" />
+            <Upload className="w-3.5 h-3.5 text-slate-400" />
             <span>Open PDF</span>
           </button>
 
-          {/* Dedicated Save PDF Button (Saves to source location where opened from) */}
+          {/* Dedicated Save PDF Button (Direct source disk write) */}
           <button
             id="save-pdf-source-button"
             onClick={() => onSaveToSource(false)}
             disabled={isSavingToSource || availableSheets.length === 0}
             title={
               hasSourceHandle
-                ? `Save PDF directly back to "${sourceFileName}" at its source location (Ctrl+S)`
+                ? `Save PDF directly back to "${sourceFileName}" on disk`
                 : sourceFileName
-                ? `Save PDF back to "${sourceFileName}" (Ctrl+S)`
-                : 'Save PDF Project at original location (Ctrl+S)'
+                ? `Save PDF back to "${sourceFileName}"`
+                : 'Save PDF file'
             }
-            className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all shadow-xs cursor-pointer disabled:opacity-50 ${
+            className={`hidden sm:flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all shadow-xs cursor-pointer disabled:opacity-50 ${
               hasSourceHandle
                 ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/40'
                 : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
@@ -202,17 +411,11 @@ export const Header: React.FC<HeaderProps> = ({
             {isSavingToSource ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-300" />
             ) : (
-              <Save className={`w-3.5 h-3.5 ${hasSourceHandle ? 'text-white' : 'text-emerald-400'}`} />
+              <HardDrive className={`w-3.5 h-3.5 ${hasSourceHandle ? 'text-white' : 'text-emerald-400'}`} />
             )}
             <span className="inline">
               {isSavingToSource ? 'Saving...' : 'Save PDF'}
             </span>
-            {hasSourceHandle && (
-              <span
-                className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse hidden sm:inline-block"
-                title="Linked directly to file on disk"
-              />
-            )}
           </button>
 
           {/* Document Management Menu (Remove, Clear, Reset) */}
@@ -232,6 +435,28 @@ export const Header: React.FC<HeaderProps> = ({
                     type="button"
                     onClick={() => {
                       setShowDocMenu(false);
+                      onSaveProject(false);
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-800 flex items-center justify-between text-slate-200 cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Save className="w-3.5 h-3.5 text-blue-400" />
+                      <div>
+                        <div className="font-semibold text-white group-hover:text-blue-300">
+                          Save Project (.bsp)
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          Preserve complete editable workspace
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-mono">Ctrl+S</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDocMenu(false);
                       onSaveToSource(false);
                     }}
                     className="w-full text-left px-3 py-2 hover:bg-slate-800 flex items-center justify-between text-slate-200 cursor-pointer group"
@@ -240,7 +465,7 @@ export const Header: React.FC<HeaderProps> = ({
                       <Save className="w-3.5 h-3.5 text-emerald-400" />
                       <div>
                         <div className="font-semibold text-emerald-300 group-hover:text-emerald-200">
-                          Save to Source Location
+                          Save to Source PDF
                         </div>
                         <div className="text-[10px] text-slate-400">
                           {hasSourceHandle
@@ -249,7 +474,6 @@ export const Header: React.FC<HeaderProps> = ({
                         </div>
                       </div>
                     </div>
-                    <span className="text-[10px] text-slate-500 font-mono">Ctrl+S</span>
                   </button>
 
                   <button
@@ -262,7 +486,7 @@ export const Header: React.FC<HeaderProps> = ({
                   >
                     <HardDrive className="w-3.5 h-3.5 text-blue-400" />
                     <div>
-                      <div className="font-medium text-slate-200">Save As New File...</div>
+                      <div className="font-medium text-slate-200">Save As New PDF...</div>
                       <div className="text-[10px] text-slate-400">Choose a new folder or file name</div>
                     </div>
                   </button>
@@ -341,22 +565,25 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
-        {/* Autosave status indicator */}
-        <div className="hidden lg:flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-slate-950 text-slate-400 border border-slate-800">
-          {autosaveStatus === 'saving' ? (
+        {/* Save Status Indicator */}
+        <div
+          id="project-save-status-indicator"
+          className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-slate-950 text-slate-400 border border-slate-800 shrink-0"
+        >
+          {autosaveStatus === 'saving' || isSavingProject ? (
             <>
               <Loader2 className="w-3 h-3 text-blue-400 animate-spin" />
-              <span className="text-blue-300">Saving...</span>
+              <span className="text-blue-300 font-medium">Saving...</span>
             </>
           ) : autosaveStatus === 'unsaved' ? (
             <>
               <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-              <span className="text-amber-300">Unsaved changes</span>
+              <span className="text-amber-300 font-medium">Unsaved changes</span>
             </>
           ) : (
             <>
               <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-              <span className="text-emerald-300">Saved</span>
+              <span className="text-emerald-300 font-medium">Saved</span>
             </>
           )}
         </div>
@@ -443,51 +670,48 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="relative flex items-center" ref={exportMenuRef}>
           <div className="inline-flex rounded-lg shadow-sm bg-blue-600 hover:bg-blue-500 transition-colors divide-x divide-blue-700/60 overflow-hidden">
             <button
-              onClick={() => onExportPdf('edited')}
-              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700/40 transition-colors"
-              title="Quick Export Active Sheet as PDF"
+              id="header-export-pdf-button"
+              onClick={onOpenExportModal}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700/40 transition-colors cursor-pointer"
+              title="Export PDF Document (Markup, Sheet Range, Flattening Options)"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Export</span>
+              <span>Export PDF...</span>
             </button>
             <button
+              id="header-export-menu-arrow"
               onClick={() => setShowExportMenu((prev) => !prev)}
-              className="px-1.5 py-1 text-white hover:bg-blue-700/40 transition-colors flex items-center justify-center"
-              title="Export Options & Formats"
+              className="px-1.5 py-1 text-white hover:bg-blue-700/40 transition-colors flex items-center justify-center cursor-pointer"
+              title="Quick Export Options & Formats"
             >
               <ChevronDown className="w-3 h-3 opacity-90" />
             </button>
           </div>
 
           {showExportMenu && (
-            <div className="absolute right-0 top-full mt-1.5 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1.5 text-xs text-slate-200 z-50 divide-y divide-slate-800">
-              <div className="py-1 bg-slate-950/50">
+            <div className="absolute right-0 top-full mt-1.5 w-68 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1.5 text-xs text-slate-200 z-50 divide-y divide-slate-800">
+              <div className="py-1">
                 <button
                   onClick={() => {
-                    onSaveToSource(false);
                     setShowExportMenu(false);
+                    onOpenExportModal();
                   }}
-                  className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between group"
+                  className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between group cursor-pointer"
                 >
                   <div className="flex items-center gap-2">
-                    <Save className="w-3.5 h-3.5 text-emerald-400" />
+                    <Download className="w-3.5 h-3.5 text-emerald-400" />
                     <div>
                       <div className="font-semibold text-emerald-300 group-hover:text-emerald-200 transition-colors">
-                        Save to Source Location
+                        Export PDF Document...
                       </div>
-                      <div className="text-[10px] text-slate-400">
-                        {hasSourceHandle
-                          ? `Overwrites "${sourceFileName}" on disk`
-                          : 'Write changes directly to original file'}
-                      </div>
+                      <div className="text-[10px] text-slate-400">Custom sheet range, markup layers & flatten</div>
                     </div>
                   </div>
-                  <span className="text-[10px] text-slate-500 font-mono">Ctrl+S</span>
                 </button>
               </div>
 
               <div className="px-3 py-1 text-[10px] uppercase font-bold text-slate-500 tracking-wider">
-                PDF Document Export
+                Quick PDF Downloads
               </div>
               <div className="py-1">
                 <button
@@ -495,10 +719,10 @@ export const Header: React.FC<HeaderProps> = ({
                     onExportPdf('edited');
                     setShowExportMenu(false);
                   }}
-                  className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between group"
+                  className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between group cursor-pointer"
                 >
                   <div>
-                    <div className="font-semibold text-white group-hover:text-blue-400 transition-colors">Download Edited PDF</div>
+                    <div className="font-semibold text-white group-hover:text-blue-400 transition-colors">Download Current Sheet</div>
                     <div className="text-[10px] text-slate-400">Current sheet with live markup layers</div>
                   </div>
                   <Download className="w-3.5 h-3.5 text-blue-400" />
@@ -509,7 +733,7 @@ export const Header: React.FC<HeaderProps> = ({
                     onExportPdf('all_sheets');
                     setShowExportMenu(false);
                   }}
-                  className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between group"
+                  className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between group cursor-pointer"
                 >
                   <div>
                     <div className="font-medium text-emerald-300 group-hover:text-emerald-200 transition-colors">Download All Sheets (Set PDF)</div>
@@ -520,27 +744,28 @@ export const Header: React.FC<HeaderProps> = ({
 
                 <button
                   onClick={() => {
-                    onExportPdf('original');
+                    onExportPdf('flattened');
                     setShowExportMenu(false);
                   }}
-                  className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between"
+                  className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between group cursor-pointer"
                 >
                   <div>
-                    <div className="font-medium text-slate-300">Download Original PDF</div>
-                    <div className="text-[10px] text-slate-400">Without review annotations</div>
+                    <div className="font-medium text-amber-300 group-hover:text-amber-200 transition-colors">Download Flattened Archival PDF</div>
+                    <div className="text-[10px] text-slate-400">Baked annotations for submittal/print</div>
                   </div>
+                  <Download className="w-3.5 h-3.5 text-amber-400" />
                 </button>
 
                 <button
                   onClick={() => {
-                    onExportPdf('flattened');
+                    onExportPdf('original');
                     setShowExportMenu(false);
                   }}
-                  className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between"
+                  className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between group cursor-pointer"
                 >
                   <div>
-                    <div className="font-medium text-amber-300">Download Flattened PDF</div>
-                    <div className="text-[10px] text-slate-400">Baked rasterized graphics</div>
+                    <div className="font-medium text-slate-300">Download Original PDF</div>
+                    <div className="text-[10px] text-slate-400">Without review annotations</div>
                   </div>
                 </button>
               </div>

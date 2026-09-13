@@ -54,6 +54,9 @@ interface AecToolbarProps {
   onAddCountCategory?: (newCategory: CountCategory) => void;
   onOpenCalibrate: () => void;
   onOpenCustomStampModal?: () => void;
+  // Polyline naming
+  activePolylineName?: string;
+  onChangePolylineName?: (name: string) => void;
   // Clear All Markups & Undo / Redo
   currentSheetMarkupCount?: number;
   totalMarkupCount?: number;
@@ -84,6 +87,8 @@ export const AecToolbar: React.FC<AecToolbarProps> = ({
   onAddCountCategory,
   onOpenCalibrate,
   onOpenCustomStampModal,
+  activePolylineName = '',
+  onChangePolylineName,
   currentSheetMarkupCount = 0,
   onOpenClearMarkupsModal,
   canUndo = false,
@@ -367,7 +372,6 @@ export const AecToolbar: React.FC<AecToolbarProps> = ({
     switch (activeTool) {
       // 1. LINEAR DISTANCE & POLYLINE MEASUREMENT
       case 'distance':
-      case 'polyline':
         return (
           <>
             {renderColorCategoryPicker('AEC Category')}
@@ -377,7 +381,32 @@ export const AecToolbar: React.FC<AecToolbarProps> = ({
             {renderSnappingToggle()}
             <div className="hidden 2xl:flex items-center gap-1 text-[10px] text-slate-400 italic pl-2 border-l border-slate-800">
               <Info className="w-3 h-3 text-blue-400" />
-              <span>{activeTool === 'distance' ? 'Click 2 points to measure' : 'Click points, double-click to finish'}</span>
+              <span>Click 2 points to measure distance</span>
+            </div>
+          </>
+        );
+
+      case 'polyline':
+        return (
+          <>
+            {renderColorCategoryPicker('AEC Category')}
+            {renderLineWeightSelector([1, 2, 3, 4, 5, 8])}
+            {renderOpacitySelector([1, 0.75, 0.5, 0.25])}
+            {renderUnitsSelector()}
+            {renderSnappingToggle()}
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-950/80 border border-slate-700/80">
+              <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Line Name:</span>
+              <input
+                type="text"
+                value={activePolylineName}
+                onChange={(e) => onChangePolylineName?.(e.target.value)}
+                placeholder="e.g. Sanitary Sewer Pipe, Corridor Wall"
+                className="bg-slate-800 text-slate-100 text-xs px-2 py-0.5 rounded border border-slate-700 focus:outline-none focus:border-blue-500 w-44 placeholder:text-slate-500"
+              />
+            </div>
+            <div className="hidden 2xl:flex items-center gap-1 text-[10px] text-slate-400 italic pl-2 border-l border-slate-800">
+              <Info className="w-3 h-3 text-blue-400" />
+              <span>Click vertices, double-click to finish polyline</span>
             </div>
           </>
         );

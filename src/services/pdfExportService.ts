@@ -136,14 +136,16 @@ export function renderMarkupsToContext(
           ctx.stroke();
 
           const last = m.points[m.points.length - 1];
-          if (m.formattedMeasurement) {
+          if (m.formattedMeasurement || m.name) {
+            const labelText = m.name ? `${m.name}: ${m.formattedMeasurement || ''}` : `L: ${m.formattedMeasurement}`;
             ctx.font = 'bold 11px Inter, monospace, sans-serif';
+            const tw = ctx.measureText(labelText).width;
             ctx.fillStyle = '#0f172a';
-            ctx.fillRect(last.x + 8, last.y - 12, 100, 22);
+            ctx.fillRect(last.x + 8, last.y - 12, tw + 14, 22);
             ctx.fillStyle = '#38bdf8';
             ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
-            ctx.fillText(`L: ${m.formattedMeasurement}`, last.x + 14, last.y - 1);
+            ctx.fillText(labelText, last.x + 14, last.y - 1);
           }
         }
         break;
