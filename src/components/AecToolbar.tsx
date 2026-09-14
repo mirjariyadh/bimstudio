@@ -47,6 +47,10 @@ interface AecToolbarProps {
   onChangeUnit: (u: LengthUnit) => void;
   snappingEnabled: boolean;
   onToggleSnapping: () => void;
+  orthoMode?: boolean;
+  onToggleOrtho?: () => void;
+  annotationScale?: number;
+  onChangeAnnotationScale?: (scale: number) => void;
   activeCountCategory: string;
   onChangeCountCategory: (cat: string) => void;
   countCategories: CountCategory[];
@@ -57,10 +61,9 @@ interface AecToolbarProps {
   // Polyline naming
   activePolylineName?: string;
   onChangePolylineName?: (name: string) => void;
-  // Clear All Markups & Undo / Redo
+  // Undo / Redo
   currentSheetMarkupCount?: number;
   totalMarkupCount?: number;
-  onOpenClearMarkupsModal?: () => void;
   canUndo?: boolean;
   onUndo?: () => void;
   canRedo?: boolean;
@@ -80,6 +83,10 @@ export const AecToolbar: React.FC<AecToolbarProps> = ({
   onChangeUnit,
   snappingEnabled,
   onToggleSnapping,
+  orthoMode = false,
+  onToggleOrtho,
+  annotationScale = 1.0,
+  onChangeAnnotationScale,
   activeCountCategory,
   onChangeCountCategory,
   countCategories,
@@ -90,7 +97,6 @@ export const AecToolbar: React.FC<AecToolbarProps> = ({
   activePolylineName = '',
   onChangePolylineName,
   currentSheetMarkupCount = 0,
-  onOpenClearMarkupsModal,
   canUndo = false,
   onUndo,
   canRedo = false,
@@ -355,7 +361,7 @@ export const AecToolbar: React.FC<AecToolbarProps> = ({
         type="button"
         onClick={onToggleSnapping}
         title={snappingEnabled ? 'Geometric Snapping is ON' : 'Geometric Snapping is OFF'}
-        className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] transition-colors ${
+        className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] transition-colors cursor-pointer ${
           snappingEnabled
             ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 font-semibold'
             : 'text-slate-400 hover:bg-slate-800 border border-slate-800'
@@ -364,6 +370,67 @@ export const AecToolbar: React.FC<AecToolbarProps> = ({
         <Magnet className="w-3 h-3" />
         <span>Snap: {snappingEnabled ? 'ON' : 'OFF'}</span>
       </button>
+    </div>
+  );
+
+  // Reusable Ortho Toggle
+  const renderOrthoToggle = () => (
+    <div className="flex items-center pl-2 border-l border-slate-800">
+      <button
+        type="button"
+        onClick={onToggleOrtho}
+        title={orthoMode ? 'Ortho Mode is ON (Constrain to H/V) [O / F8 / Hold Shift]' : 'Ortho Mode is OFF [O / F8 / Hold Shift]'}
+        className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] transition-colors cursor-pointer ${
+          orthoMode
+            ? 'bg-blue-600/30 text-blue-300 border border-blue-500/50 font-semibold'
+            : 'text-slate-400 hover:bg-slate-800 border border-slate-800'
+        }`}
+      >
+        <span className="font-mono font-bold text-[10px] px-1 py-0.2 bg-slate-800 rounded border border-slate-700 text-blue-400">⟂</span>
+        <span>Ortho: {orthoMode ? 'ON' : 'OFF'}</span>
+      </button>
+    </div>
+  );
+
+  // Reusable Annotation / Dimension / Text Scale Selector
+  const renderTextScaleSelector = (label: string = 'Text Scale:') => (
+    <div className="flex items-center gap-1.5 pl-2 border-l border-slate-800">
+      <Type className="w-3.5 h-3.5 text-cyan-400" />
+      <span className="text-slate-400 font-medium">{label}</span>
+      <div className="flex items-center bg-slate-900 border border-slate-700/80 rounded overflow-hidden">
+        <button
+          type="button"
+          onClick={() => onChangeAnnotationScale?.(Math.max(0.5, Number((annotationScale - 0.25).toFixed(2))))}
+          title="Decrease scale (-0.25x)"
+          className="px-1.5 py-0.5 text-slate-300 hover:text-white hover:bg-slate-800 font-mono text-xs cursor-pointer border-r border-slate-700"
+        >
+          -
+        </button>
+        <select
+          value={annotationScale}
+          onChange={(e) => onChangeAnnotationScale?.(parseFloat(e.target.value))}
+          className="bg-transparent text-cyan-300 font-mono text-[11px] font-semibold px-1 py-0.5 focus:outline-none cursor-pointer"
+          title="Annotation Scale (scales dimensions, distance tags, text notes, callouts, and area badges)"
+        >
+          <option value={0.5} className="bg-slate-900 text-white">0.50×</option>
+          <option value={0.75} className="bg-slate-900 text-white">0.75×</option>
+          <option value={1.0} className="bg-slate-900 text-white">1.00× (Default)</option>
+          <option value={1.25} className="bg-slate-900 text-white">1.25×</option>
+          <option value={1.5} className="bg-slate-900 text-white">1.50×</option>
+          <option value={1.75} className="bg-slate-900 text-white">1.75×</option>
+          <option value={2.0} className="bg-slate-900 text-white">2.00×</option>
+          <option value={2.5} className="bg-slate-900 text-white">2.50×</option>
+          <option value={3.0} className="bg-slate-900 text-white">3.00×</option>
+        </select>
+        <button
+          type="button"
+          onClick={() => onChangeAnnotationScale?.(Math.min(3.5, Number((annotationScale + 0.25).toFixed(2))))}
+          title="Increase scale (+0.25x)"
+          className="px-1.5 py-0.5 text-slate-300 hover:text-white hover:bg-slate-800 font-mono text-xs cursor-pointer border-l border-slate-700"
+        >
+          +
+        </button>
+      </div>
     </div>
   );
 
@@ -378,10 +445,12 @@ export const AecToolbar: React.FC<AecToolbarProps> = ({
             {renderLineWeightSelector([1, 2, 3, 4, 5, 8])}
             {renderOpacitySelector([1, 0.75, 0.5, 0.25])}
             {renderUnitsSelector()}
+            {renderTextScaleSelector('Text:')}
             {renderSnappingToggle()}
+            {renderOrthoToggle()}
             <div className="hidden 2xl:flex items-center gap-1 text-[10px] text-slate-400 italic pl-2 border-l border-slate-800">
               <Info className="w-3 h-3 text-blue-400" />
-              <span>Click 2 points to measure distance</span>
+              <span>Click 2 points to measure distance (Ortho constrains H/V)</span>
             </div>
           </>
         );
@@ -393,7 +462,9 @@ export const AecToolbar: React.FC<AecToolbarProps> = ({
             {renderLineWeightSelector([1, 2, 3, 4, 5, 8])}
             {renderOpacitySelector([1, 0.75, 0.5, 0.25])}
             {renderUnitsSelector()}
+            {renderTextScaleSelector('Text:')}
             {renderSnappingToggle()}
+            {renderOrthoToggle()}
             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-950/80 border border-slate-700/80">
               <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Line Name:</span>
               <input
@@ -419,10 +490,12 @@ export const AecToolbar: React.FC<AecToolbarProps> = ({
             {renderLineWeightSelector([1, 2, 3, 4])}
             {renderOpacitySelector([1, 0.8, 0.5])}
             {renderUnitsSelector()}
+            {renderTextScaleSelector('Dim Text:')}
             {renderSnappingToggle()}
+            {renderOrthoToggle()}
             <div className="hidden xl:flex items-center gap-1 text-[10px] text-slate-400 italic pl-2 border-l border-slate-800">
               <Info className="w-3 h-3 text-blue-400" />
-              <span>Click 2 points to generate architectural dimension string</span>
+              <span>Click 2 points to generate architectural dimension string (Ortho locks H/V)</span>
             </div>
           </>
         );
@@ -435,8 +508,10 @@ export const AecToolbar: React.FC<AecToolbarProps> = ({
             {renderLineWeightSelector([1, 2, 3, 5], 'Border:')}
             {renderOpacitySelector([1, 0.75, 0.5], 'Fill:')}
             {renderUnitsSelector()}
+            {renderTextScaleSelector('Area Text:')}
             {renderSnappingToggle()}
-            <div className="hidden xl:flex items-center gap-1 text-[10px] text-slate-400 italic pl-2 border-l border-slate-800">
+            {renderOrthoToggle()}
+            <div className="hidden xl:flex items-center gap-1 text-[10px] text-indigo-400 italic pl-2 border-l border-slate-800">
               <Info className="w-3 h-3 text-indigo-400" />
               <span>Click 3+ points to enclose area, double-click to complete</span>
             </div>
@@ -573,6 +648,7 @@ export const AecToolbar: React.FC<AecToolbarProps> = ({
             {renderColorCategoryPicker('Callout Color')}
             {renderLineWeightSelector([1, 2, 3], 'Leader:')}
             {renderOpacitySelector([1, 0.8, 0.5])}
+            {renderTextScaleSelector('Callout Scale:')}
             <div className="hidden xl:flex items-center gap-1 text-[10px] text-amber-400/80 italic pl-2 border-l border-slate-800">
               <Info className="w-3 h-3 text-amber-400" />
               <span>Click point for arrow tip, then click to place callout text</span>
@@ -587,6 +663,7 @@ export const AecToolbar: React.FC<AecToolbarProps> = ({
             {renderColorCategoryPicker('Text Color')}
             {renderLineWeightSelector([1, 2, 3], 'Border:')}
             {renderOpacitySelector([1, 0.8, 0.5])}
+            {renderTextScaleSelector('Text Scale:')}
             <div className="hidden xl:flex items-center gap-1 text-[10px] text-sky-400/80 italic pl-2 border-l border-slate-800">
               <Info className="w-3 h-3 text-sky-400" />
               <span>Click anywhere on sheet to insert text box</span>
@@ -600,6 +677,7 @@ export const AecToolbar: React.FC<AecToolbarProps> = ({
           <>
             {renderColorCategoryPicker('Card Color')}
             {renderOpacitySelector([1, 0.85, 0.65])}
+            {renderTextScaleSelector('Note Scale:')}
             <div className="hidden xl:flex items-center gap-1 text-[10px] text-yellow-400/80 italic pl-2 border-l border-slate-800">
               <Info className="w-3 h-3 text-yellow-400" />
               <span>Click drawing to post collaboration sticky note</span>
@@ -713,10 +791,12 @@ export const AecToolbar: React.FC<AecToolbarProps> = ({
       case 'select':
         return (
           <>
+            {renderTextScaleSelector('Markup Scale:')}
             {renderSnappingToggle()}
-            <div className="flex items-center gap-1 text-[11px] text-slate-300">
+            {renderOrthoToggle()}
+            <div className="flex items-center gap-1 text-[11px] text-slate-300 pl-1">
               <Info className="w-3.5 h-3.5 text-blue-400" />
-              <span>Select Mode: Click any markup to move, edit, or delete it</span>
+              <span>Click any markup to select, resize with Scale, move, or delete</span>
             </div>
           </>
         );
@@ -1001,7 +1081,7 @@ export const AecToolbar: React.FC<AecToolbarProps> = ({
                 onClick={onUndo}
                 disabled={!canUndo}
                 title="Undo (Ctrl+Z)"
-                className="p-1.5 rounded text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                className="p-1.5 rounded text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-transparent transition-colors cursor-pointer"
               >
                 <Undo2 className="w-4 h-4" />
               </button>
@@ -1012,7 +1092,7 @@ export const AecToolbar: React.FC<AecToolbarProps> = ({
                 onClick={onRedo}
                 disabled={!canRedo}
                 title="Redo (Ctrl+Y)"
-                className="p-1.5 rounded text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                className="p-1.5 rounded text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-transparent transition-colors cursor-pointer"
               >
                 <Redo2 className="w-4 h-4" />
               </button>
@@ -1020,25 +1100,77 @@ export const AecToolbar: React.FC<AecToolbarProps> = ({
           </div>
         )}
 
-        {/* Quick Clear Markups Button in Top Bar */}
-        {onOpenClearMarkupsModal && (
-          <div className="ml-auto flex items-center pl-2">
-            <button
-              type="button"
-              onClick={onOpenClearMarkupsModal}
-              title="Clear all markups from sheet"
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-950/40 text-red-300 border border-red-800/60 hover:bg-red-900/60 hover:text-white hover:border-red-600 transition-all shadow-xs"
-            >
-              <Trash2 className="w-3.5 h-3.5 text-red-400" />
-              <span className="hidden sm:inline">Clear Markups</span>
-              {currentSheetMarkupCount > 0 && (
-                <span className="bg-red-500/20 text-red-300 font-mono text-[10px] px-1.5 py-0.2 rounded-full border border-red-500/30">
-                  {currentSheetMarkupCount}
-                </span>
-              )}
-            </button>
+        {/* Global Quick Drawing Precision & Scale Controls */}
+        <div className="ml-auto flex items-center gap-2 pl-2">
+          {/* Ortho Mode Toggle */}
+          <button
+            type="button"
+            onClick={onToggleOrtho}
+            title={orthoMode ? 'Ortho Mode is ON (Constrain drawings H/V) [O / F8 / Hold Shift]' : 'Ortho Mode is OFF [O / F8 / Hold Shift]'}
+            className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs font-mono transition-all cursor-pointer ${
+              orthoMode
+                ? 'bg-blue-600/30 text-blue-300 border border-blue-500/50 shadow-sm font-semibold'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 border border-slate-700/60'
+            }`}
+          >
+            <span className="font-bold text-[11px] text-blue-400">⟂</span>
+            <span>ORTHO: {orthoMode ? 'ON' : 'OFF'}</span>
+          </button>
+
+          {/* Snapping Toggle */}
+          <button
+            type="button"
+            onClick={onToggleSnapping}
+            title={snappingEnabled ? 'Geometric Snapping is ON' : 'Geometric Snapping is OFF'}
+            className={`hidden sm:flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-all cursor-pointer ${
+              snappingEnabled
+                ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 font-semibold'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 border border-slate-700/60'
+            }`}
+          >
+            <Magnet className="w-3.5 h-3.5 text-blue-400" />
+            <span>SNAP</span>
+          </button>
+
+          {/* Quick Global Text / Dim Scale */}
+          <div className="flex items-center gap-1 pl-2 border-l border-slate-800">
+            <span className="text-[11px] text-slate-400 font-medium">Scale:</span>
+            <div className="flex items-center bg-slate-900 border border-slate-700/80 rounded overflow-hidden">
+              <button
+                type="button"
+                onClick={() => onChangeAnnotationScale?.(Math.max(0.5, Number((annotationScale - 0.25).toFixed(2))))}
+                title="Decrease scale (-0.25x)"
+                className="px-1.5 py-0.5 text-slate-300 hover:text-white hover:bg-slate-800 font-mono text-xs cursor-pointer border-r border-slate-700"
+              >
+                -
+              </button>
+              <select
+                value={annotationScale}
+                onChange={(e) => onChangeAnnotationScale?.(parseFloat(e.target.value))}
+                className="bg-transparent text-cyan-300 font-mono text-[11px] font-semibold px-1 py-0.5 focus:outline-none cursor-pointer"
+                title="Scale for dimension text, notes, and callouts"
+              >
+                <option value={0.5} className="bg-slate-900 text-white">0.50×</option>
+                <option value={0.75} className="bg-slate-900 text-white">0.75×</option>
+                <option value={1.0} className="bg-slate-900 text-white">1.00×</option>
+                <option value={1.25} className="bg-slate-900 text-white">1.25×</option>
+                <option value={1.5} className="bg-slate-900 text-white">1.50×</option>
+                <option value={1.75} className="bg-slate-900 text-white">1.75×</option>
+                <option value={2.0} className="bg-slate-900 text-white">2.00×</option>
+                <option value={2.5} className="bg-slate-900 text-white">2.50×</option>
+                <option value={3.0} className="bg-slate-900 text-white">3.00×</option>
+              </select>
+              <button
+                type="button"
+                onClick={() => onChangeAnnotationScale?.(Math.min(3.5, Number((annotationScale + 0.25).toFixed(2))))}
+                title="Increase scale (+0.25x)"
+                className="px-1.5 py-0.5 text-slate-300 hover:text-white hover:bg-slate-800 font-mono text-xs cursor-pointer border-l border-slate-700"
+              >
+                +
+              </button>
+            </div>
           </div>
-        )}
+        </div>
       </div>
 
       {/* 2. DYNAMIC BELLOW SECTION: Shows Options for the Selected Tool */}
@@ -1050,26 +1182,6 @@ export const AecToolbar: React.FC<AecToolbarProps> = ({
         <div className="flex items-center flex-wrap gap-2.5">
           {renderBellowOptions()}
         </div>
-
-        {/* Clear All Markups Button in Bellow Section */}
-        {onOpenClearMarkupsModal && (
-          <div className="ml-auto flex items-center gap-2 pl-3 border-l border-slate-800/80">
-            <button
-              type="button"
-              onClick={onOpenClearMarkupsModal}
-              title="Clear all markups from sheet (shows confirmation)"
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-red-950/40 text-red-300 border border-red-800/60 hover:bg-red-900/70 hover:text-white hover:border-red-500 transition-all shadow-xs"
-            >
-              <Trash2 className="w-3.5 h-3.5 text-red-400" />
-              <span>Clear All Markups</span>
-              {currentSheetMarkupCount > 0 && (
-                <span className="bg-red-500/20 text-red-300 font-mono text-[10px] px-1.5 py-0.2 rounded-full border border-red-500/30 font-bold">
-                  {currentSheetMarkupCount}
-                </span>
-              )}
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

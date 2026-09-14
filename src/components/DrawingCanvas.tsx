@@ -177,6 +177,10 @@ interface DrawingCanvasProps {
   calibration: PageScaleCalibration;
   onCompleteCalibration: (pixelDistance: number) => void;
   snappingEnabled: boolean;
+  orthoMode?: boolean;
+  onToggleOrtho?: () => void;
+  annotationScale?: number;
+  onChangeAnnotationScale?: (scale: number) => void;
   activeCountCategory: string;
   countCategories: Array<{ id: string; name: string; color: string; count: number }>;
   activePolylineName?: string;
@@ -196,6 +200,10 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   calibration,
   onCompleteCalibration,
   snappingEnabled,
+  orthoMode = false,
+  onToggleOrtho,
+  annotationScale = 1.0,
+  onChangeAnnotationScale,
   activeCountCategory,
   countCategories,
   activePolylineName = '',
@@ -211,6 +219,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   const [panStart, setPanStart] = useState<Point>({ x: 0, y: 0 });
   const [rotation, setRotation] = useState<number>(0);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const [isShiftPressed, setIsShiftPressed] = useState(false);
 
   // Active Drawing Interactions
   const [currentPoints, setCurrentPoints] = useState<Point[]>([]);
@@ -220,12 +229,75 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   const [isDraggingMarkup, setIsDraggingMarkup] = useState(false);
   const [dragStartPos, setDragStartPos] = useState<Point>({ x: 0, y: 0 });
 
+  // Effective Ortho Mode (from persistent toggle or temporary Shift key hold)
+  const effectiveOrtho = Boolean(orthoMode || isShiftPressed);
+
+  // Orthogonal constraint helper (locks to either horizontal or vertical axis from anchor)
+  const applyOrtho = (anchor: Point, target: Point): Point => {
+    const dx = Math.abs(target.x - anchor.x);
+    const dy = Math.abs(target.y - anchor.y);
+    return dx >= dy ? { x: target.x, y: anchor.y } : { x: anchor.x, y: target.y };
+  };
+
+  // Shift and Ortho Shortcut listeners
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        setIsShiftPressed(true);
+      }
+      if (
+        document.activeElement?.tagName === 'INPUT' ||
+        document.activeElement?.tagName === 'TEXTAREA' ||
+        (document.activeElement as HTMLElement)?.isContentEditable
+      ) {
+        return;
+      }
+      if (e.key === 'F8' || (e.key.toLowerCase() === 'o' && !e.ctrlKey && !e.metaKey && !e.altKey)) {
+        e.preventDefault();
+        onToggleOrtho?.();
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        setIsShiftPressed(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [onToggleOrtho]);
+
   // Auto-clear selection if the markup no longer exists in markups list
   useEffect(() => {
     if (selectedMarkupId && !markups.some((m) => m.id === selectedMarkupId)) {
       setSelectedMarkupId(null);
     }
   }, [markups, selectedMarkupId]);
+
+  // Synchronize toolbar annotationScale when a markup is selected
+  useEffect(() => {
+    if (selectedMarkupId) {
+      const target = markups.find((m) => m.id === selectedMarkupId);
+      if (target?.textScale !== undefined && target.textScale !== annotationScale) {
+        onChangeAnnotationScale?.(target.textScale);
+      }
+    }
+  }, [selectedMarkupId]);
+
+  // Apply toolbar annotationScale change to currently selected markup
+  useEffect(() => {
+    if (selectedMarkupId && annotationScale !== undefined) {
+      const target = markups.find((m) => m.id === selectedMarkupId);
+      if (target && target.textScale !== annotationScale) {
+        onUpdateMarkup(selectedMarkupId, { textScale: annotationScale });
+      }
+    }
+  }, [annotationScale]);
 
   // Keyboard shortcuts (Del, Backspace, Esc) for selected markup
   useEffect(() => {
@@ -384,12 +456,16 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
             // Dimension / Measurement badge
             if (m.formattedMeasurement) {
+              const scale = m.textScale || 1.0;
               const mx = (p1.x + p2.x) / 2;
               const my = (p1.y + p2.y) / 2;
-              ctx.font = 'bold 12px Inter, monospace';
+              const fontSize = Math.max(8, Math.round(12 * scale));
+              ctx.font = `bold ${fontSize}px Inter, monospace`;
               const textW = ctx.measureText(m.formattedMeasurement).width;
+              const boxH = Math.round(22 * scale);
+              const boxW = textW + Math.round(12 * scale);
               ctx.fillStyle = '#0f172a';
-              ctx.fillRect(mx - textW / 2 - 6, my - 12, textW + 12, 22);
+              ctx.fillRect(mx - boxW / 2, my - boxH / 2, boxW, boxH);
               ctx.fillStyle = '#38bdf8';
               ctx.textAlign = 'center';
               ctx.textBaseline = 'middle';
@@ -402,7 +478,8 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         case 'dimension': {
           if (m.points.length >= 2) {
             const [p1, p2] = m.points;
-            const offset = 25;
+            const scale = m.textScale || 1.0;
+            const offset = 25 * scale;
             const dx = p2.x - p1.x;
             const dy = p2.y - p1.y;
             const len = Math.sqrt(dx * dx + dy * dy);
@@ -424,7 +501,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
               ctx.stroke();
 
               // 45 degree architectural tick
-              const tick = 6;
+              const tick = 6 * scale;
               ctx.lineWidth = m.strokeWidth + 1;
               ctx.beginPath();
               ctx.moveTo(sx - tick, sy + tick);
@@ -436,10 +513,13 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
               const mx = (sx + ex) / 2;
               const my = (sy + ey) / 2;
               const txt = m.text || m.formattedMeasurement || 'DIM';
-              ctx.font = 'bold 12px Inter, monospace';
+              const fontSize = Math.max(8, Math.round(12 * scale));
+              ctx.font = `bold ${fontSize}px Inter, monospace`;
               const tw = ctx.measureText(txt).width;
+              const boxH = Math.round(18 * scale);
+              const boxW = tw + Math.round(10 * scale);
               ctx.fillStyle = '#ffffff';
-              ctx.fillRect(mx - tw / 2 - 4, my - 9, tw + 8, 18);
+              ctx.fillRect(mx - boxW / 2, my - boxH / 2, boxW, boxH);
               ctx.fillStyle = m.strokeColor;
               ctx.textAlign = 'center';
               ctx.textBaseline = 'middle';
@@ -461,16 +541,21 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             // Measurement badge at end (with line name if set)
             const last = m.points[m.points.length - 1];
             if (m.formattedMeasurement || m.name) {
+              const scale = m.textScale || 1.0;
               const labelText = m.name
                 ? `${m.name}: ${m.formattedMeasurement || ''}`
                 : `L: ${m.formattedMeasurement}`;
-              ctx.font = 'bold 11px Inter, monospace';
+              const fontSize = Math.max(8, Math.round(11 * scale));
+              ctx.font = `bold ${fontSize}px Inter, monospace`;
               const textWidth = ctx.measureText(labelText).width;
+              const boxH = Math.round(22 * scale);
+              const boxW = textWidth + Math.round(14 * scale);
               ctx.fillStyle = '#0f172a';
-              ctx.fillRect(last.x + 8, last.y - 12, textWidth + 14, 22);
+              ctx.fillRect(last.x + 8, last.y - boxH / 2, boxW, boxH);
               ctx.fillStyle = '#38bdf8';
               ctx.textAlign = 'left';
-              ctx.fillText(labelText, last.x + 14, last.y + 4);
+              ctx.textBaseline = 'middle';
+              ctx.fillText(labelText, last.x + 14, last.y);
             }
           }
           break;
@@ -499,10 +584,14 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             cy /= m.points.length;
 
             if (m.formattedMeasurement) {
-              ctx.font = 'bold 12px Inter, monospace';
+              const scale = m.textScale || 1.0;
+              const fontSize = Math.max(8, Math.round(12 * scale));
+              ctx.font = `bold ${fontSize}px Inter, monospace`;
               const textW = ctx.measureText(m.formattedMeasurement).width;
+              const boxH = Math.round(22 * scale);
+              const boxW = textW + Math.round(12 * scale);
               ctx.fillStyle = '#0f172a';
-              ctx.fillRect(cx - textW / 2 - 6, cy - 11, textW + 12, 22);
+              ctx.fillRect(cx - boxW / 2, cy - boxH / 2, boxW, boxH);
               ctx.fillStyle = '#4ade80';
               ctx.textAlign = 'center';
               ctx.textBaseline = 'middle';
@@ -542,11 +631,17 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
             // Revision Tag badge if text exists
             if (m.text) {
-              ctx.font = 'bold 11px Inter, sans-serif';
+              const scale = m.textScale || 1.0;
+              const fontSize = Math.max(8, Math.round(11 * scale));
+              ctx.font = `bold ${fontSize}px Inter, sans-serif`;
+              const textW = ctx.measureText(m.text).width;
+              const boxH = Math.round(20 * scale);
+              const boxW = textW + Math.round(12 * scale);
               ctx.fillStyle = '#dc2626';
-              ctx.fillRect(rx + 6, ry - 14, ctx.measureText(m.text).width + 12, 20);
+              ctx.fillRect(rx + 6, ry - boxH + 4, boxW, boxH);
               ctx.fillStyle = '#ffffff';
-              ctx.fillText(m.text, rx + 12, ry);
+              ctx.textBaseline = 'middle';
+              ctx.fillText(m.text, rx + 12, ry - boxH / 2 + 4);
             }
           }
           break;
@@ -607,6 +702,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
           if (m.points.length >= 1) {
             const p = m.points[0];
             const end = m.points.length >= 2 ? m.points[1] : (m.calloutLeaderEnd || { x: p.x + 80, y: p.y - 50 });
+            const scale = m.textScale || 1.0;
 
             // Leader line from arrow tip to text shoulder
             ctx.beginPath();
@@ -616,7 +712,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
             // Arrow tip at p pointing towards p (from end)
             const angle = Math.atan2(p.y - end.y, p.x - end.x);
-            const headLen = 13;
+            const headLen = 13 * scale;
             ctx.beginPath();
             ctx.moveTo(p.x, p.y);
             ctx.lineTo(
@@ -632,10 +728,11 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             ctx.fill();
 
             // Horizontal landing shoulder & callout bubble card
-            ctx.font = 'bold 12px Inter, sans-serif';
+            const fontSize = Math.max(8, Math.round(12 * scale));
+            ctx.font = `bold ${fontSize}px Inter, sans-serif`;
             const txt = m.text || 'Callout Note';
             const tw = ctx.measureText(txt).width;
-            const shoulderWidth = Math.max(75, tw + 16);
+            const shoulderWidth = Math.max(75 * scale, tw + 16 * scale);
             const isLeft = end.x < p.x;
             const shoulderEndX = isLeft ? end.x - shoulderWidth : end.x + shoulderWidth;
 
@@ -647,17 +744,18 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
             // Bubble card
             const cardX = isLeft ? shoulderEndX : end.x;
-            const cardY = end.y - 24;
+            const cardH = Math.round(22 * scale);
+            const cardY = end.y - cardH - 2;
             ctx.fillStyle = '#ffffff';
-            ctx.fillRect(cardX, cardY, shoulderWidth, 22);
+            ctx.fillRect(cardX, cardY, shoulderWidth, cardH);
             ctx.strokeStyle = m.strokeColor;
             ctx.lineWidth = 1.5;
-            ctx.strokeRect(cardX, cardY, shoulderWidth, 22);
+            ctx.strokeRect(cardX, cardY, shoulderWidth, cardH);
 
             ctx.fillStyle = '#0f172a';
             ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
-            ctx.fillText(txt, cardX + 8, end.y - 13);
+            ctx.fillText(txt, cardX + 8 * scale, cardY + cardH / 2);
           }
           break;
         }
@@ -665,20 +763,25 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         case 'textbox': {
           if (m.points.length >= 1) {
             const p = m.points[0];
-            ctx.font = `${m.fontSize || 14}px Inter, sans-serif`;
+            const scale = m.textScale || 1.0;
+            const baseFontSize = m.fontSize || 14;
+            const fontSize = Math.max(8, Math.round(baseFontSize * scale));
+            ctx.font = `${fontSize}px Inter, sans-serif`;
             const text = m.text || 'Text Note';
             const tw = ctx.measureText(text).width;
+            const boxH = Math.round(26 * scale);
+            const boxW = tw + Math.round(14 * scale);
 
             ctx.fillStyle = '#ffffff';
-            ctx.fillRect(p.x - 6, p.y - 18, tw + 12, 26);
+            ctx.fillRect(p.x - 6 * scale, p.y - 18 * scale, boxW, boxH);
             ctx.strokeStyle = m.strokeColor;
             ctx.lineWidth = 1.5;
-            ctx.strokeRect(p.x - 6, p.y - 18, tw + 12, 26);
+            ctx.strokeRect(p.x - 6 * scale, p.y - 18 * scale, boxW, boxH);
 
             ctx.fillStyle = m.strokeColor;
             ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
-            ctx.fillText(text, p.x, p.y - 5);
+            ctx.fillText(text, p.x, p.y - 5 * scale);
           }
           break;
         }
@@ -686,12 +789,13 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         case 'stickynote': {
           if (m.points.length >= 1) {
             const p = m.points[0];
-            const w = 150;
-            const h = 100;
+            const scale = m.textScale || 1.0;
+            const w = Math.round(150 * scale);
+            const h = Math.round(100 * scale);
 
             // Shadow
             ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
-            ctx.fillRect(p.x + 3, p.y + 3, w, h);
+            ctx.fillRect(p.x + 3 * scale, p.y + 3 * scale, w, h);
 
             // Post-it yellow background
             ctx.fillStyle = '#fef08a';
@@ -703,31 +807,32 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             // Folded bottom-right corner effect
             ctx.fillStyle = '#fde047';
             ctx.beginPath();
-            ctx.moveTo(p.x + w - 16, p.y + h);
-            ctx.lineTo(p.x + w, p.y + h - 16);
-            ctx.lineTo(p.x + w - 16, p.y + h - 16);
+            ctx.moveTo(p.x + w - 16 * scale, p.y + h);
+            ctx.lineTo(p.x + w, p.y + h - 16 * scale);
+            ctx.lineTo(p.x + w - 16 * scale, p.y + h - 16 * scale);
             ctx.closePath();
             ctx.fill();
 
             // Header strip
+            const headerH = Math.round(22 * scale);
             ctx.fillStyle = '#facc15';
-            ctx.fillRect(p.x, p.y, w, 22);
+            ctx.fillRect(p.x, p.y, w, headerH);
 
             // Author / Title
             ctx.fillStyle = '#854d0e';
-            ctx.font = 'bold 10px Inter, sans-serif';
+            ctx.font = `bold ${Math.max(8, Math.round(10 * scale))}px Inter, sans-serif`;
             ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
-            ctx.fillText(`STICKY NOTE • ${m.author || 'Reviewer'}`, p.x + 8, p.y + 11);
+            ctx.fillText(`STICKY NOTE • ${m.author || 'Reviewer'}`, p.x + 8 * scale, p.y + headerH / 2);
 
             // Body text
             ctx.fillStyle = '#1e293b';
-            ctx.font = '11px Inter, sans-serif';
+            ctx.font = `${Math.max(8, Math.round(11 * scale))}px Inter, sans-serif`;
             ctx.textBaseline = 'top';
             const txt = m.text || 'Review comment';
 
             // Text wrapping for sticky note
-            const maxCharsPerLine = 22;
+            const maxCharsPerLine = Math.max(14, Math.round(22 * scale));
             const words = txt.split(' ');
             const lines: string[] = [];
             let cur = '';
@@ -741,8 +846,9 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             }
             if (cur) lines.push(cur);
 
+            const lineHeight = Math.round(16 * scale);
             lines.slice(0, 4).forEach((line, idx) => {
-              ctx.fillText(line, p.x + 8, p.y + 28 + idx * 16);
+              ctx.fillText(line, p.x + 8 * scale, p.y + headerH + 6 * scale + idx * lineHeight);
             });
           }
           break;
@@ -1143,7 +1249,17 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     if (e.button !== 0) return; // Only left click
 
     const rawPos = screenToDrawing(e.clientX, e.clientY);
-    const pos = snapPoint || rawPos;
+    let finalPos = snapPoint || rawPos;
+
+    // Apply Orthogonal constraint (Horizontal or Vertical lock) when drawing
+    if (
+      effectiveOrtho &&
+      currentPoints.length > 0 &&
+      ['distance', 'calibrate', 'dimension', 'polyline', 'area', 'arrow'].includes(activeTool)
+    ) {
+      finalPos = applyOrtho(currentPoints[currentPoints.length - 1], finalPos);
+    }
+    const pos = finalPos;
 
     // Selection tool: hit test markups
     if (activeTool === 'select') {
@@ -1191,6 +1307,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         stampText: 'APPROVED',
         status: 'Approved',
         discipline: currentDrawing.sheetInfo.discipline,
+        textScale: annotationScale,
       });
       return;
     }
@@ -1236,6 +1353,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         text: defaultText,
         status: 'Open',
         discipline: currentDrawing.sheetInfo.discipline,
+        textScale: annotationScale,
       });
       setSelectedMarkupId(newId);
       setEditingMarkupId(newId);
@@ -1261,6 +1379,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         text: defaultText,
         status: 'Open',
         discipline: currentDrawing.sheetInfo.discipline,
+        textScale: annotationScale,
       });
       setSelectedMarkupId(newId);
       setEditingMarkupId(newId);
@@ -1292,6 +1411,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
           text: defaultText,
           status: 'Open',
           discipline: currentDrawing.sheetInfo.discipline,
+          textScale: annotationScale,
         });
         setCurrentPoints([]);
         setSelectedMarkupId(newId);
@@ -1336,6 +1456,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
           text: formatted,
           status: 'Open',
           discipline: currentDrawing.sheetInfo.discipline,
+          textScale: annotationScale,
         });
         setCurrentPoints([]);
       }
@@ -1375,6 +1496,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
           status: 'Open',
           discipline: currentDrawing.sheetInfo.discipline,
           text: activeTool === 'revision_cloud' ? 'REV 03' : undefined,
+          textScale: annotationScale,
         });
         setCurrentPoints([]);
       }
@@ -1397,10 +1519,19 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     }
 
     const rawPos = screenToDrawing(e.clientX, e.clientY);
-    setHoverPos(rawPos);
-
-    // Snapping
     const snapped = findSnapPoint(rawPos);
+    let targetPos = snapped || rawPos;
+
+    // Apply Orthogonal constraint to hover cursor in active drawing flow
+    if (
+      effectiveOrtho &&
+      currentPoints.length > 0 &&
+      ['distance', 'calibrate', 'dimension', 'polyline', 'area', 'arrow'].includes(activeTool)
+    ) {
+      targetPos = applyOrtho(currentPoints[currentPoints.length - 1], targetPos);
+    }
+
+    setHoverPos(targetPos);
     setSnapPoint(snapped);
 
     // Freehand drawing in progress
@@ -1530,6 +1661,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         text: polyName,
         status: 'Open',
         discipline: currentDrawing.sheetInfo.discipline,
+        textScale: annotationScale,
       });
       setCurrentPoints([]);
     } else if (activeTool === 'area' && currentPoints.length >= 3) {
@@ -1554,6 +1686,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         formattedMeasurement: formatted,
         status: 'Open',
         discipline: currentDrawing.sheetInfo.discipline,
+        textScale: annotationScale,
       });
       setCurrentPoints([]);
     }
@@ -1795,6 +1928,51 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
                 <span>{markups.find((m) => m.id === selectedMarkupId)?.type === 'polyline' ? 'Rename Line' : 'Edit Text'}</span>
               </button>
             )}
+
+            {/* Individual Scale adjustment buttons for selected annotation */}
+            <div className="flex items-center gap-0.5 px-1 py-0.5 bg-slate-800/80 rounded-md border border-slate-700/60">
+              <span className="text-[10px] text-slate-400 font-semibold px-1">Scale</span>
+              <button
+                type="button"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const target = markups.find((m) => m.id === selectedMarkupId);
+                  if (target) {
+                    const currentScale = target.textScale !== undefined ? target.textScale : (annotationScale || 1.0);
+                    const newScale = Math.max(0.5, Number((currentScale - 0.25).toFixed(2)));
+                    onUpdateMarkup(target.id, { textScale: newScale });
+                    onChangeAnnotationScale?.(newScale);
+                  }
+                }}
+                title="Make Smaller (Scale -0.25x)"
+                className="px-1.5 py-0.5 hover:bg-slate-700 text-slate-300 hover:text-white rounded text-[11px] font-bold"
+              >
+                -
+              </button>
+              <span className="text-[10px] font-mono text-cyan-400 px-0.5">
+                {(markups.find((m) => m.id === selectedMarkupId)?.textScale ?? annotationScale ?? 1.0).toFixed(2)}x
+              </span>
+              <button
+                type="button"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const target = markups.find((m) => m.id === selectedMarkupId);
+                  if (target) {
+                    const currentScale = target.textScale !== undefined ? target.textScale : (annotationScale || 1.0);
+                    const newScale = Math.min(3.0, Number((currentScale + 0.25).toFixed(2)));
+                    onUpdateMarkup(target.id, { textScale: newScale });
+                    onChangeAnnotationScale?.(newScale);
+                  }
+                }}
+                title="Make Larger (Scale +0.25x)"
+                className="px-1.5 py-0.5 hover:bg-slate-700 text-slate-300 hover:text-white rounded text-[11px] font-bold"
+              >
+                +
+              </button>
+            </div>
+
             <button
               type="button"
               onMouseDown={(e) => e.stopPropagation()}
@@ -1920,11 +2098,32 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
           </div>
         </div>
 
-        {/* Center: Snapping & Active Tool Hint */}
+        {/* Center: Snapping, Ortho & Active Tool Hint */}
         <div className="hidden md:flex items-center gap-2 text-[11px] text-slate-400">
-          <span>Active Tool:</span>
+          <span>Active:</span>
           <span className="font-semibold text-blue-400 uppercase tracking-wide">
             {activeTool}
+          </span>
+          <div className="text-slate-700">|</div>
+          {onToggleOrtho && (
+            <button
+              type="button"
+              onClick={onToggleOrtho}
+              title="Ortho Mode (Press O, F8, or hold Shift to lock 90° angles)"
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-colors cursor-pointer ${
+                effectiveOrtho
+                  ? 'bg-blue-600 text-white shadow-xs shadow-blue-500/50'
+                  : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <span>ORTHO</span>
+              <span className={effectiveOrtho ? 'text-blue-200' : 'text-slate-500'}>
+                {effectiveOrtho ? 'ON' : 'OFF'}
+              </span>
+            </button>
+          )}
+          <span className="text-[10px] font-mono text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded">
+            SCALE: {annotationScale || 1.0}x
           </span>
           {activeTool === 'distance' && currentPoints.length > 0 && (
             <span className="text-amber-400 animate-pulse font-medium">

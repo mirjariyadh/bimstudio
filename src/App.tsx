@@ -32,6 +32,8 @@ import { FlattenModal } from './components/editPdf/FlattenModal';
 import { ClearMarkupsModal } from './components/ClearMarkupsModal';
 import { ExportPdfModal } from './components/ExportPdfModal';
 import { OpenPdfModal } from './components/OpenPdfModal';
+import { FileProcessingProgressModal } from './components/FileProcessingProgressModal';
+import { FileProcessingFloatingBar } from './components/FileProcessingFloatingBar';
 import { NewProjectModal } from './components/NewProjectModal';
 import { EmptyWorkspace } from './components/EmptyWorkspace';
 import { MobileDeviceWarning } from './components/MobileDeviceWarning';
@@ -248,6 +250,8 @@ export default function App() {
   const [opacity, setOpacity] = useState<number>(1);
   const [unit, setUnit] = useState<LengthUnit>('m');
   const [snappingEnabled, setSnappingEnabled] = useState<boolean>(true);
+  const [orthoMode, setOrthoMode] = useState<boolean>(false);
+  const [annotationScale, setAnnotationScale] = useState<number>(1.0);
   const [activePolylineName, setActivePolylineName] = useState<string>('Pipe Run 01');
 
   // Standard Mode Search & View State
@@ -359,6 +363,7 @@ export default function App() {
   const [isPropertiesOpen, setIsPropertiesOpen] = useState(false);
   const [isFlattenOpen, setIsFlattenOpen] = useState(false);
   const [isClearMarkupsOpen, setIsClearMarkupsOpen] = useState(false);
+  const [clearMarkupsInitialScope, setClearMarkupsInitialScope] = useState<'current' | 'all'>('current');
 
   // Sidebars
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
@@ -369,6 +374,9 @@ export default function App() {
   const [pendingFileHandle, setPendingFileHandle] = useState<FileSystemFileHandle | null>(null);
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
   const [pdfProgressText, setPdfProgressText] = useState('');
+  const [pdfProgressPercent, setPdfProgressPercent] = useState<number>(0);
+  const [currentProcessingFileName, setCurrentProcessingFileName] = useState<string>('');
+  const [currentProcessingFileSizeMb, setCurrentProcessingFileSizeMb] = useState<string>('');
 
   // Source File Handle for Native In-Place Disk Overwrite
   const [sourceFileHandle, setSourceFileHandle] = useState<FileSystemFileHandle | null>(null);
@@ -471,6 +479,10 @@ export default function App() {
     saveUndoSnapshot();
     let enriched = { ...newMarkup };
 
+    if (enriched.textScale === undefined) {
+      enriched.textScale = annotationScale;
+    }
+
     // If placing a custom stamp
     if (newMarkup.type === 'stamp' && activeCustomStamp) {
       const targetSheet = currentDrawing?.sheetInfo || activeSheetInfo;
@@ -507,6 +519,12 @@ export default function App() {
       );
     }
     setMarkups((prev) => prev.filter((m) => m.id !== id));
+  };
+
+  // Open Clear Markups Modal with preset scope
+  const handleOpenClearMarkupsDialog = (scope: 'current' | 'all' = 'current') => {
+    setClearMarkupsInitialScope(scope);
+    setIsClearMarkupsOpen(true);
   };
 
   // Clear Markups on Current Sheet or Entire Project
@@ -587,16 +605,24 @@ export default function App() {
     handle?: FileSystemFileHandle
   ) => {
     setIsProcessingPdf(true);
-    setPdfProgressText('Reading file & rendering vector drawing pages...');
+    setCurrentProcessingFileName(file.name);
+    setCurrentProcessingFileSizeMb((file.size / (1024 * 1024)).toFixed(1));
+    setPdfProgressPercent(10);
+    setPdfProgressText('Reading file into local device memory...');
     try {
       const startIndex = mode === 'append' ? sheets.length : 0;
-      const newSheets = await loadDrawingFilesAsSheets(file, startIndex, (cur, tot) => {
-        setPdfProgressText(`Rendering page ${cur} of ${tot}...`);
+      const newSheets = await loadDrawingFilesAsSheets(file, startIndex, (cur, tot, msg, pct) => {
+        if (pct !== undefined) setPdfProgressPercent(pct);
+        if (msg) setPdfProgressText(msg);
+        else setPdfProgressText(`Rendering sheet ${cur} of ${tot}...`);
       });
 
       if (!newSheets || newSheets.length === 0) {
         throw new Error('No readable drawing pages found in file.');
       }
+
+      setPdfProgressPercent(100);
+      setPdfProgressText('Document ready in local workspace.');
 
       if (mode === 'replace') {
         setSheets(newSheets);
@@ -625,9 +651,12 @@ export default function App() {
       console.error('Failed to load drawing file:', err);
       addToast('Failed to Open File', err?.message || 'Could not parse document pages.', 'warning');
     } finally {
-      setIsProcessingPdf(false);
-      setPendingPdfFile(null);
-      setPendingFileHandle(null);
+      setTimeout(() => {
+        setIsProcessingPdf(false);
+        setPendingPdfFile(null);
+        setPendingFileHandle(null);
+        setPdfProgressPercent(0);
+      }, 350);
     }
   };
 
@@ -1132,12 +1161,21 @@ export default function App() {
   saveProjectRef.current = handleSaveProject;
 
   const handleOpenProjectFile = async (file: File, handle?: FileSystemFileHandle) => {
+    setIsProcessingPdf(true);
+    setCurrentProcessingFileName(file.name);
+    setCurrentProcessingFileSizeMb((file.size / (1024 * 1024)).toFixed(1));
+    setPdfProgressPercent(25);
+    setPdfProgressText(`Reading project "${file.name}" locally...`);
     try {
       addToast('Opening Project', `Loading "${file.name}"...`, 'info');
+      setPdfProgressPercent(45);
+      setPdfProgressText('Parsing workspace data & vector elements...');
       const project = await parseBspFile(file);
 
       // Restore sheets
       if (project.sheets && project.sheets.length > 0) {
+        setPdfProgressPercent(65);
+        setPdfProgressText('Restoring high-resolution sheets & drawings...');
         const loadedSheets = await restoreSheetsFromBsp(project.sheets);
         if (loadedSheets.length > 0) {
           setSheets(loadedSheets);
@@ -1148,6 +1186,9 @@ export default function App() {
           setCurrentSheetId(targetSheetId);
         }
       }
+
+      setPdfProgressPercent(85);
+      setPdfProgressText('Restoring markups, annotations & calibrations...');
 
       // Restore vector markups
       setMarkups(Array.isArray(project.markups) ? project.markups : []);
@@ -1187,6 +1228,9 @@ export default function App() {
       const markupCount = Array.isArray(project.markups) ? project.markups.length : 0;
       const sheetCount = project.sheets ? project.sheets.length : sheets.length;
 
+      setPdfProgressPercent(100);
+      setPdfProgressText('Project workspace restored.');
+
       addToast(
         'Project Restored',
         `Successfully opened "${file.name}". Restored ${sheetCount} sheet(s) and ${markupCount} markup(s) in editable vector format.`,
@@ -1195,6 +1239,11 @@ export default function App() {
     } catch (err: any) {
       console.error('Failed to parse BSP project:', err);
       addToast('Open Project Error', err?.message || 'Invalid or corrupt .bsp project file.', 'warning');
+    } finally {
+      setTimeout(() => {
+        setIsProcessingPdf(false);
+        setPdfProgressPercent(0);
+      }, 350);
     }
   };
 
@@ -1496,6 +1545,10 @@ export default function App() {
         projectFileName={projectFileName}
         onOpenProjectPrompt={handleOpenProjectPrompt}
         onOpenProjectFile={(file) => handleOpenProjectFile(file)}
+        onClearCurrentSheetMarkups={() => handleOpenClearMarkupsDialog('current')}
+        onClearAllMarkups={() => handleOpenClearMarkupsDialog('all')}
+        currentSheetMarkupCount={pageMarkups.length}
+        totalMarkupCount={markups.length}
       />
 
       {/* 2. Dynamic Mode Toolbar */}
@@ -1533,6 +1586,10 @@ export default function App() {
           onChangeUnit={(u) => setUnit(u)}
           snappingEnabled={snappingEnabled}
           onToggleSnapping={() => setSnappingEnabled((s) => !s)}
+          orthoMode={orthoMode}
+          onToggleOrtho={() => setOrthoMode((o) => !o)}
+          annotationScale={annotationScale}
+          onChangeAnnotationScale={(scale) => setAnnotationScale(scale)}
           activePolylineName={activePolylineName}
           onChangePolylineName={(name) => setActivePolylineName(name)}
           activeCountCategory={activeCountCategory}
@@ -1544,7 +1601,7 @@ export default function App() {
           onOpenCustomStampModal={() => setIsCustomStampOpen(true)}
           currentSheetMarkupCount={pageMarkups.length}
           totalMarkupCount={markups.length}
-          onOpenClearMarkupsModal={() => setIsClearMarkupsOpen(true)}
+          onOpenClearMarkupsModal={() => handleOpenClearMarkupsDialog('current')}
           canUndo={undoStack.length > 0}
           onUndo={handleUndo}
           canRedo={redoStack.length > 0}
@@ -1613,6 +1670,10 @@ export default function App() {
             calibration={currentCalibration}
             onCompleteCalibration={handleCompleteCalibration}
             snappingEnabled={snappingEnabled}
+            orthoMode={orthoMode}
+            onToggleOrtho={() => setOrthoMode((o) => !o)}
+            annotationScale={annotationScale}
+            onChangeAnnotationScale={(scale) => setAnnotationScale(scale)}
             activePolylineName={activePolylineName}
             activeCountCategory={activeCountCategory}
             countCategories={countCategories}
@@ -1866,6 +1927,30 @@ export default function App() {
         currentSheetTitle={currentDrawing?.sheetInfo.title || 'Technical Drawing'}
         currentSheetMarkupCount={pageMarkups.length}
         totalProjectMarkupCount={markups.length}
+        initialScope={clearMarkupsInitialScope}
+      />
+
+      {/* File Processing Real-time Progress Modal */}
+      <FileProcessingProgressModal
+        isOpen={isProcessingPdf}
+        fileName={currentProcessingFileName}
+        fileSizeMb={currentProcessingFileSizeMb}
+        percent={pdfProgressPercent}
+        statusText={pdfProgressText}
+        onCancel={() => {
+          setIsProcessingPdf(false);
+          setPendingPdfFile(null);
+          setPendingFileHandle(null);
+          setPdfProgressPercent(0);
+        }}
+      />
+
+      {/* Non-intrusive Floating Progress Bar */}
+      <FileProcessingFloatingBar
+        isVisible={isProcessingPdf && !pendingPdfFile}
+        fileName={currentProcessingFileName}
+        percent={pdfProgressPercent}
+        statusText={pdfProgressText}
       />
 
       {/* Export PDF Modal */}

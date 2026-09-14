@@ -62,14 +62,16 @@ export async function loadPdfFromBytes(
 export async function loadDrawingFilesAsSheets(
   file: File,
   basePageIndex = 0,
-  onProgress?: (current: number, total: number) => void
+  onProgress?: (current: number, total: number, message?: string, percent?: number) => void
 ): Promise<SampleDrawing[]> {
   const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|webp|svg|bmp)$/i.test(file.name);
 
   if (isImage) {
+    if (onProgress) onProgress(0, 1, 'Reading image file from local device...', 25);
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (ev) => {
+        if (onProgress) onProgress(1, 1, 'Rendering drawing image canvas...', 75);
         const dataUrl = ev.target?.result as string;
         const img = new Image();
         img.onload = () => {
@@ -98,6 +100,7 @@ export async function loadDrawingFilesAsSheets(
               ctx.drawImage(img, 0, 0, w, h);
             },
           };
+          if (onProgress) onProgress(1, 1, 'Image loaded locally.', 100);
           resolve([sheet]);
         };
         img.onerror = () => reject(new Error('Failed to load image file into drawing canvas.'));
@@ -109,6 +112,7 @@ export async function loadDrawingFilesAsSheets(
   }
 
   // It is a PDF
+  if (onProgress) onProgress(0, 1, 'Reading PDF file into local memory...', 10);
   const arrayBuffer = await file.arrayBuffer();
   const bytes = new Uint8Array(arrayBuffer);
 
@@ -122,6 +126,7 @@ export async function loadDrawingFilesAsSheets(
   }
 
   try {
+    if (onProgress) onProgress(0, 1, 'Parsing vector Linework & embedded fonts...', 20);
     const loadingTask = pdfjsLib.getDocument({
       data: bytes,
       useSystemFonts: true,
@@ -134,7 +139,15 @@ export async function loadDrawingFilesAsSheets(
     const sheets: SampleDrawing[] = [];
 
     for (let p = 1; p <= numPages; p++) {
-      if (onProgress) onProgress(p, numPages);
+      const pagePercent = Math.min(95, Math.round(25 + ((p - 0.5) / numPages) * 70));
+      if (onProgress) {
+        onProgress(
+          p,
+          numPages,
+          `Rendering Sheet ${p} of ${numPages} in High-DPI Vector Canvas...`,
+          pagePercent
+        );
+      }
       const page = await pdfDoc.getPage(p);
 
       // Render at 2.0x scale for crisp architectural CAD vector line weights and small text

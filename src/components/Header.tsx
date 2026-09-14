@@ -33,6 +33,7 @@ import {
   HardDrive,
   FolderOpen,
   FilePlus2,
+  Eraser,
 } from 'lucide-react';
 import { DrawingSheetInfo, AppWorkspaceMode } from '../types';
 
@@ -71,6 +72,10 @@ interface HeaderProps {
   onOpenExportModal: () => void;
   onPrint: () => void;
   scaleString: string;
+  onClearCurrentSheetMarkups?: () => void;
+  onClearAllMarkups?: () => void;
+  currentSheetMarkupCount?: number;
+  totalMarkupCount?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -105,6 +110,10 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenExportModal,
   onPrint,
   scaleString,
+  onClearCurrentSheetMarkups,
+  onClearAllMarkups,
+  currentSheetMarkupCount = 0,
+  totalMarkupCount = 0,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bspFileInputRef = useRef<HTMLInputElement>(null);
@@ -449,7 +458,50 @@ export const Header: React.FC<HeaderProps> = ({
                   </button>
                 </div>
 
-                {/* 4. Sheet Management */}
+                {/* 4. Markups Management */}
+                <div className="py-1 border-t border-slate-800">
+                  {onClearCurrentSheetMarkups && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowFileMenu(false);
+                        onClearCurrentSheetMarkups();
+                      }}
+                      disabled={currentSheetMarkupCount === 0}
+                      className="w-full text-left px-3 py-1.5 hover:bg-slate-800 flex items-center justify-between text-slate-300 hover:text-amber-300 cursor-pointer disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-300"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Eraser className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Clear Markups ({currentSheet.sheetNumber})</span>
+                      </div>
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                        {currentSheetMarkupCount}
+                      </span>
+                    </button>
+                  )}
+
+                  {onClearAllMarkups && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowFileMenu(false);
+                        onClearAllMarkups();
+                      }}
+                      disabled={totalMarkupCount === 0}
+                      className="w-full text-left px-3 py-1.5 hover:bg-red-950/40 flex items-center justify-between text-red-400 hover:text-red-300 cursor-pointer disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-red-400"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                        <span>Clear All Markups (Project)</span>
+                      </div>
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-red-950/50 text-red-300 border border-red-800/60">
+                        {totalMarkupCount}
+                      </span>
+                    </button>
+                  )}
+                </div>
+
+                {/* 5. Sheet Management */}
                 <div className="py-1">
                   {availableSheets.length > 0 && onRemoveCurrentSheet && (
                     <button

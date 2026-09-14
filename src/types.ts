@@ -110,6 +110,7 @@ export interface MarkupItem {
   locked?: boolean;
   text?: string;
   fontSize?: number;
+  textScale?: number;
   fontFamily?: string;
   fontStyle?: { bold?: boolean; italic?: boolean; underline?: boolean };
   textAlign?: 'left' | 'center' | 'right';

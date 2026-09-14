@@ -14,6 +14,7 @@ interface ClearMarkupsModalProps {
   currentSheetTitle: string;
   currentSheetMarkupCount: number;
   totalProjectMarkupCount: number;
+  initialScope?: 'current' | 'all';
 }
 
 export const ClearMarkupsModal: React.FC<ClearMarkupsModalProps> = ({
@@ -24,8 +25,16 @@ export const ClearMarkupsModal: React.FC<ClearMarkupsModalProps> = ({
   currentSheetTitle,
   currentSheetMarkupCount,
   totalProjectMarkupCount,
+  initialScope = 'current',
 }) => {
-  const [scope, setScope] = useState<'current' | 'all'>('current');
+  const [scope, setScope] = useState<'current' | 'all'>(initialScope);
+
+  // Sync scope when initialScope changes or modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setScope(initialScope);
+    }
+  }, [isOpen, initialScope]);
 
   // Handle escape key to close
   useEffect(() => {
