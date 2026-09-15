@@ -448,34 +448,113 @@ export async function exportPdfDocument(options: PdfExportOptions): Promise<Blob
     const sheet = sheetsToExport[idx];
     options.onProgress?.(idx + 1, sheetsToExport.length);
 
-    // Create offscreen canvas for sheet rendering
+    // 1. Native Vector PDF Export with CropBox & MediaBox preservation
+    if (sheet.isVectorPdf && sheet.pdfOriginalBytes) {
+      try {
+        const srcDoc = await PDFDocument.load(sheet.pdfOriginalBytes);
+        const pageIdx = sheet.pdfPageNumber ? Math.max(0, sheet.pdfPageNumber - 1) : 0;
+        const [copiedPage] = await pdfDoc.copyPages(srcDoc, [pageIdx]);
+
+        const origBox = copiedPage.getCropBox() || copiedPage.getMediaBox();
+        const rootW = sheet.originalWidth || (sheet.cropBox ? sheet.cropBox.width : sheet.width) || 1200;
+        const rootH = sheet.originalHeight || (sheet.cropBox ? sheet.cropBox.height : sheet.height) || 800;
+
+        let targetCropX = origBox.x;
+        let targetCropY = origBox.y;
+        let targetCropW = origBox.width;
+        let targetCropH = origBox.height;
+
+        if (sheet.cropBox) {
+          const scaleX = origBox.width / rootW;
+          const scaleY = origBox.height / rootH;
+
+          targetCropX = origBox.x + sheet.cropBox.x * scaleX;
+          targetCropW = Math.max(10, sheet.cropBox.width * scaleX);
+          // In PDF coordinates, y=0 is at bottom-left, so calculate from bottom:
+          targetCropY = origBox.y + (rootH - (sheet.cropBox.y + sheet.cropBox.height)) * scaleY;
+          targetCropH = Math.max(10, sheet.cropBox.height * scaleY);
+
+          copiedPage.setCropBox(targetCropX, targetCropY, targetCropW, targetCropH);
+          copiedPage.setMediaBox(targetCropX, targetCropY, targetCropW, targetCropH);
+        }
+
+        // Overlay markups at 300 DPI print quality if not purely "original"
+        if (options.mode !== 'original') {
+          const pageMarkups = options.markups.filter(
+            (m) => m.pageIndex === sheet.sheetInfo.pageIndex
+          );
+
+          if (pageMarkups.length > 0) {
+            // High-DPI transparent overlay for crisp vector markups
+            const overlayScale = Math.min(3.5, Math.max(2.0, 2400 / Math.max(sheet.width, 300)));
+            const mCanvas = document.createElement('canvas');
+            mCanvas.width = Math.round(sheet.width * overlayScale);
+            mCanvas.height = Math.round(sheet.height * overlayScale);
+            const mCtx = mCanvas.getContext('2d');
+            if (mCtx) {
+              mCtx.scale(overlayScale, overlayScale);
+              renderMarkupsToContext(mCtx, pageMarkups, options.countCategories || []);
+              const dataUrl = mCanvas.toDataURL('image/png');
+              const base64Data = dataUrl.split(',')[1];
+              const binaryStr = atob(base64Data);
+              const bytes = new Uint8Array(binaryStr.length);
+              for (let b = 0; b < binaryStr.length; b++) {
+                bytes[b] = binaryStr.charCodeAt(b);
+              }
+              const embeddedOverlay = await pdfDoc.embedPng(bytes);
+              copiedPage.drawImage(embeddedOverlay, {
+                x: targetCropX,
+                y: targetCropY,
+                width: targetCropW,
+                height: targetCropH,
+              });
+            }
+          }
+        }
+
+        pdfDoc.addPage(copiedPage);
+        continue; // Vector page added with zero quality loss!
+      } catch (vectorCopyErr) {
+        console.warn('Native vector PDF copy fallback to high-DPI rendering:', vectorCopyErr);
+      }
+    }
+
+    // 2. High-DPI fallback for CAD drawings or non-vector sheets (300 DPI print resolution)
+    const pageWidthPt = Math.max(sheet.width || 1200, 400);
+    const pageHeightPt = Math.max(sheet.height || 800, 300);
+
+    const targetPixelDim = 2800;
+    const rasterScale = Math.min(4.0, Math.max(2.5, targetPixelDim / Math.max(pageWidthPt, pageHeightPt)));
+    const renderWidth = Math.round(pageWidthPt * rasterScale);
+    const renderHeight = Math.round(pageHeightPt * rasterScale);
+
     const canvas = document.createElement('canvas');
-    canvas.width = Math.max(sheet.width || 1400, 600);
-    canvas.height = Math.max(sheet.height || 900, 400);
+    canvas.width = renderWidth;
+    canvas.height = renderHeight;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) continue;
 
-    // Fill white baseline
     ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, renderWidth, renderHeight);
 
-    // 1. Render the drawing sheet
+    // Render drawing sheet scaled up to 300-DPI high resolution
     try {
-      sheet.render(ctx, canvas.width, canvas.height);
+      ctx.save();
+      ctx.scale(rasterScale, rasterScale);
+      sheet.render(ctx, pageWidthPt, pageHeightPt);
+      if (options.mode !== 'original') {
+        const pageMarkups = options.markups.filter(
+          (m) => m.pageIndex === sheet.sheetInfo.pageIndex
+        );
+        renderMarkupsToContext(ctx, pageMarkups, options.countCategories || []);
+      }
+      ctx.restore();
     } catch (err) {
       console.warn(`Error rendering sheet ${sheet.id} during export:`, err);
     }
 
-    // 2. Render markups if not purely "original"
-    if (options.mode !== 'original') {
-      const pageMarkups = options.markups.filter(
-        (m) => m.pageIndex === sheet.sheetInfo.pageIndex
-      );
-      renderMarkupsToContext(ctx, pageMarkups, options.countCategories || []);
-    }
-
-    // 3. Convert canvas to PNG data bytes
+    // Convert canvas to PNG data bytes
     const dataUrl = canvas.toDataURL('image/png');
     const base64Data = dataUrl.split(',')[1];
     const binaryStr = atob(base64Data);
@@ -484,14 +563,14 @@ export async function exportPdfDocument(options: PdfExportOptions): Promise<Blob
       bytes[b] = binaryStr.charCodeAt(b);
     }
 
-    // 4. Embed into PDF
+    // Embed into PDF at original physical dimensions for high PPI
     const embeddedImage = await pdfDoc.embedPng(bytes);
-    const page = pdfDoc.addPage([canvas.width, canvas.height]);
+    const page = pdfDoc.addPage([pageWidthPt, pageHeightPt]);
     page.drawImage(embeddedImage, {
       x: 0,
       y: 0,
-      width: canvas.width,
-      height: canvas.height,
+      width: pageWidthPt,
+      height: pageHeightPt,
     });
   }
 

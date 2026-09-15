@@ -294,6 +294,9 @@ export async function loadDrawingFilesAsSheets(
         },
         width: sheetWidth,
         height: sheetHeight,
+        originalWidth: sheetWidth,
+        originalHeight: sheetHeight,
+        pdfOriginalBytes: bytes,
         extractedText: extractedText || `Page ${p} of ${file.name}`,
         isVectorPdf: true,
         pdfDocProxy: pdfDoc,
@@ -495,9 +498,11 @@ export function createCroppedDrawing(
 ): SampleDrawing {
   const prevW = sheet.width;
   const prevH = sheet.height;
+  const rootW = sheet.originalWidth || prevW;
+  const rootH = sheet.originalHeight || prevH;
   const newSheetId = `${sheet.id}-crop-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
 
-  // Calculate accumulated crop coordinates in underlying source space
+  // Calculate accumulated crop coordinates in underlying root source space
   const prevCrop = sheet.cropBox || { x: 0, y: 0, width: prevW, height: prevH };
   const normRatioX = prevCrop.width / prevW;
   const normRatioY = prevCrop.height / prevH;
@@ -506,28 +511,40 @@ export function createCroppedDrawing(
   const accumulatedCropW = Math.round(cW * normRatioX);
   const accumulatedCropH = Math.round(cH * normRatioY);
 
-  // Pre-render the cropped drawing immediately to a dedicated offscreen canvas
+  // Pre-render cropped drawing to high-DPI buffer (2x) so display & quick export stay sharp
+  const pixelRatio = 2.0;
   const srcCanvas = document.createElement('canvas');
-  srcCanvas.width = prevW;
-  srcCanvas.height = prevH;
+  srcCanvas.width = Math.round(prevW * pixelRatio);
+  srcCanvas.height = Math.round(prevH * pixelRatio);
   const srcCtx = srcCanvas.getContext('2d');
   if (srcCtx) {
+    srcCtx.scale(pixelRatio, pixelRatio);
     sheet.render(srcCtx, prevW, prevH);
   }
 
   const croppedCanvas = document.createElement('canvas');
-  croppedCanvas.width = cW;
-  croppedCanvas.height = cH;
+  croppedCanvas.width = Math.round(cW * pixelRatio);
+  croppedCanvas.height = Math.round(cH * pixelRatio);
   const croppedCtx = croppedCanvas.getContext('2d');
   if (croppedCtx && srcCtx) {
-    croppedCtx.drawImage(srcCanvas, cX, cY, cW, cH, 0, 0, cW, cH);
+    croppedCtx.drawImage(
+      srcCanvas,
+      Math.round(cX * pixelRatio),
+      Math.round(cY * pixelRatio),
+      Math.round(cW * pixelRatio),
+      Math.round(cH * pixelRatio),
+      0,
+      0,
+      croppedCanvas.width,
+      croppedCanvas.height
+    );
   }
 
   const croppedRender = (
     ctx: CanvasRenderingContext2D,
     w: number,
     h: number,
-    options?: { highlightDiff?: boolean }
+    _options?: { highlightDiff?: boolean }
   ) => {
     ctx.clearRect(0, 0, w, h);
     ctx.drawImage(croppedCanvas, 0, 0, w, h);
@@ -567,8 +584,8 @@ export function createCroppedDrawing(
         if (onTaskCreated) onTaskCreated(renderTask);
         await renderTask.promise;
 
-        const scaleX = pageW / prevCrop.width;
-        const scaleY = pageH / prevCrop.height;
+        const scaleX = pageW / rootW;
+        const scaleY = pageH / rootH;
 
         const subX = Math.round(accumulatedCropX * scaleX);
         const subY = Math.round(accumulatedCropY * scaleY);
@@ -606,6 +623,13 @@ export function createCroppedDrawing(
     },
     width: cW,
     height: cH,
+    originalWidth: rootW,
+    originalHeight: rootH,
+    pdfOriginalBytes: sheet.pdfOriginalBytes,
+    pdfDocProxy: sheet.pdfDocProxy,
+    pdfPageProxy: sheet.pdfPageProxy,
+    pdfPageNumber: sheet.pdfPageNumber,
+    pdfBaseScale: sheet.pdfBaseScale,
     cropBox: {
       x: accumulatedCropX,
       y: accumulatedCropY,
