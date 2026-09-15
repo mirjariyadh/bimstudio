@@ -38,7 +38,7 @@ import { FileProcessingFloatingBar } from './components/FileProcessingFloatingBa
 import { NewProjectModal } from './components/NewProjectModal';
 import { EmptyWorkspace } from './components/EmptyWorkspace';
 import { MobileDeviceWarning } from './components/MobileDeviceWarning';
-import { loadDrawingFilesAsSheets } from './services/pdfService';
+import { loadDrawingFilesAsSheets, createCroppedDrawing } from './services/pdfService';
 import {
   ToolType,
   MarkupItem,
@@ -800,42 +800,7 @@ export default function App() {
     const origW = currentDrawing.width;
     const origH = currentDrawing.height;
 
-    // Helper to generate a cropped SampleDrawing
-    const cropSingleDrawing = (
-      sheet: SampleDrawing,
-      cX: number,
-      cY: number,
-      cW: number,
-      cH: number
-    ): SampleDrawing => {
-      const prevRender = sheet.render;
-      const prevW = sheet.width;
-      const prevH = sheet.height;
-
-      const croppedRender = (
-        ctx: CanvasRenderingContext2D,
-        w: number,
-        h: number,
-        options?: { highlightDiff?: boolean }
-      ) => {
-        const offscreen = document.createElement('canvas');
-        offscreen.width = prevW;
-        offscreen.height = prevH;
-        const offCtx = offscreen.getContext('2d');
-        if (offCtx) {
-          prevRender(offCtx, prevW, prevH, options);
-          ctx.clearRect(0, 0, w, h);
-          ctx.drawImage(offscreen, cX, cY, cW, cH, 0, 0, w, h);
-        }
-      };
-
-      return {
-        ...sheet,
-        width: cW,
-        height: cH,
-        render: croppedRender,
-      };
-    };
+    let newCurrentSheetId = targetSheetId;
 
     // Update sheets state
     setSheets((prevSheets) => {
@@ -847,11 +812,19 @@ export default function App() {
           const sY = Math.round(y * scaleY);
           const sW = Math.round(cropW * scaleX);
           const sH = Math.round(cropH * scaleY);
-          return cropSingleDrawing(s, sX, sY, sW, sH);
+          const cropped = createCroppedDrawing(s, sX, sY, sW, sH);
+          if (s.id === targetSheetId) {
+            newCurrentSheetId = cropped.id;
+          }
+          return cropped;
         }
         return s;
       });
     });
+
+    if (newCurrentSheetId !== targetSheetId) {
+      setCurrentSheetId(newCurrentSheetId);
+    }
 
     // Shift markups on the cropped page(s) so visual position relative to technical drawing stays aligned
     setMarkups((prevMarkups) => {

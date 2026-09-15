@@ -491,6 +491,10 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
           console.warn('Error executing sheet preview render:', renderErr);
         }
       }
+      lastRenderedDrawingIdRef.current = currentDrawing.id;
+      lastRenderedScaleRef.current = 1.0;
+      setVectorFidelityStatus('crisp');
+      return; // Do NOT launch immediate vector re-render on open! The sheet is already rendered!
     }
 
     // Cancel any previous vector render task
@@ -504,16 +508,19 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     }
 
     const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-    const targetScale = Math.min(3.5, Math.max(1.0, zoom * dpr));
+    const targetScale = Math.min(2.5, Math.max(1.0, zoom * dpr));
 
     // If this drawing has direct vector rendering (PDF vector linework)
-    if (typeof currentDrawing.renderVector === 'function') {
+    // Only upgrade vector fidelity if user is zoomed in deeply (zoom >= 1.4) AND scale changed significantly (>25%)
+    if (typeof currentDrawing.renderVector === 'function' && zoom >= 1.4) {
       const scaleDiff = Math.abs(targetScale - lastRenderedScaleRef.current) / (lastRenderedScaleRef.current || 1);
-      // If drawing changed or scale changed significantly (>18%)
-      if (isNewDrawing || scaleDiff > 0.18) {
+      if (scaleDiff > 0.25) {
         setVectorFidelityStatus('rendering');
         const timeoutId = setTimeout(() => {
-          if (!baseCanvasRef.current) return;
+          if (!baseCanvasRef.current || currentDrawing.id !== lastRenderedDrawingIdRef.current) {
+            setVectorFidelityStatus('crisp');
+            return;
+          }
           currentDrawing
             .renderVector!(baseCanvasRef.current, targetScale, (task) => {
               activeRenderTaskRef.current = task;
@@ -521,16 +528,16 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             .then((res) => {
               if (res) {
                 lastRenderedScaleRef.current = targetScale;
-                lastRenderedDrawingIdRef.current = currentDrawing.id;
-                setVectorFidelityStatus('crisp');
               }
+              setVectorFidelityStatus('crisp');
             })
             .catch((err) => {
               if (err?.name !== 'RenderingCancelledException') {
                 console.warn('Vector re-render note:', err);
               }
+              setVectorFidelityStatus('crisp');
             });
-        }, isNewDrawing ? 10 : 120);
+        }, 450); // 450ms debounce ensures smooth navigation without repeated render interruptions
 
         return () => {
           clearTimeout(timeoutId);
@@ -544,9 +551,6 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         };
       }
     } else {
-      // Standard CAD or sample drawing
-      lastRenderedDrawingIdRef.current = currentDrawing.id;
-      lastRenderedScaleRef.current = 1.0;
       setVectorFidelityStatus('crisp');
     }
   }, [currentDrawing, zoom]);

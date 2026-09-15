@@ -94,6 +94,11 @@ export const CropModal: React.FC<CropModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setIsFreedomMode(initialFreedomMode);
+      setCropLeft(5);
+      setCropTop(5);
+      setCropRight(95);
+      setCropBottom(95);
+      setSelectedPreset('Custom');
     }
   }, [isOpen, initialFreedomMode]);
 

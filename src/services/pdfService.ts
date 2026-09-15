@@ -197,35 +197,33 @@ export async function loadDrawingFilesAsSheets(
 
       // Internal cached high-DPI canvas to avoid re-rendering if unchanged
       let cachedCanvas: HTMLCanvasElement | null = null;
-      let isRendering = false;
 
       const vectorRenderer = async (
         canvas: HTMLCanvasElement,
         targetScale: number,
         onTaskCreated?: (task: any) => void
       ): Promise<{ width: number; height: number } | null> => {
-        // Clamp scale to safe GPU texture bounds (max 4096px to prevent WebGL/Canvas buffer overflow)
+        // Clamp scale to safe bounds: max 2800px on either dimension so rendering is ultra-fast
         const maxDim = Math.max(sheetWidth, sheetHeight);
-        const maxAllowedScale = Math.max(1.0, 4096 / maxDim);
+        const maxAllowedScale = Math.max(1.0, 2800 / maxDim);
         const effectiveScale = Math.min(Math.max(0.75, targetScale), maxAllowedScale);
 
         const renderViewport = page.getViewport({ scale: baseScale * effectiveScale });
         const targetW = Math.round(renderViewport.width);
         const targetH = Math.round(renderViewport.height);
 
-        canvas.width = targetW;
-        canvas.height = targetH;
-        canvas.style.width = `${sheetWidth}px`;
-        canvas.style.height = `${sheetHeight}px`;
+        // Render to offscreen canvas first so the visible canvas is NEVER blanked while waiting
+        const offscreen = document.createElement('canvas');
+        offscreen.width = targetW;
+        offscreen.height = targetH;
+        const offCtx = offscreen.getContext('2d', { alpha: false });
+        if (!offCtx) return null;
 
-        const ctx = canvas.getContext('2d', { alpha: false });
-        if (!ctx) return null;
-
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, targetW, targetH);
+        offCtx.fillStyle = '#ffffff';
+        offCtx.fillRect(0, 0, targetW, targetH);
 
         const renderTask = page.render({
-          canvasContext: ctx,
+          canvasContext: offCtx,
           viewport: renderViewport,
           intent: 'display',
           annotationMode: pdfjsLib.AnnotationMode.ENABLE,
@@ -235,7 +233,17 @@ export async function loadDrawingFilesAsSheets(
 
         try {
           await renderTask.promise;
-          cachedCanvas = canvas;
+          cachedCanvas = offscreen;
+
+          // Safely update destination canvas with 0 flicker
+          canvas.width = targetW;
+          canvas.height = targetH;
+          canvas.style.width = `${sheetWidth}px`;
+          canvas.style.height = `${sheetHeight}px`;
+          const ctx = canvas.getContext('2d', { alpha: false });
+          if (ctx) {
+            ctx.drawImage(offscreen, 0, 0);
+          }
           return { width: targetW, height: targetH };
         } catch (err: any) {
           if (err?.name === 'RenderingCancelledException') {
@@ -250,7 +258,7 @@ export async function loadDrawingFilesAsSheets(
       if (p === 1) {
         try {
           const initCanvas = document.createElement('canvas');
-          const initScale = 1.5;
+          const initScale = 1.25;
           const initViewport = page.getViewport({ scale: baseScale * initScale });
           initCanvas.width = Math.round(initViewport.width);
           initCanvas.height = Math.round(initViewport.height);
@@ -297,7 +305,6 @@ export async function loadDrawingFilesAsSheets(
           if (cachedCanvas) {
             ctx.drawImage(cachedCanvas, 0, 0, w, h);
           } else {
-            // Placeholder while async vector render resolves
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, w, h);
             ctx.strokeStyle = '#e2e8f0';
@@ -310,15 +317,7 @@ export async function loadDrawingFilesAsSheets(
 
             ctx.fillStyle = '#64748b';
             ctx.font = '14px sans-serif';
-            ctx.fillText('Vector linework rendering directly in browser...', 60, 125);
-
-            if (!isRendering) {
-              isRendering = true;
-              const off = document.createElement('canvas');
-              vectorRenderer(off, 1.5).then(() => {
-                isRendering = false;
-              });
-            }
+            ctx.fillText('Preparing crisp vector sheet...', 60, 125);
           }
         },
       });
@@ -481,4 +480,139 @@ export async function exportFlattenedPdfWithMarkups(
 
   const pdfBytes = await pdfDoc.save();
   return new Blob([pdfBytes], { type: 'application/pdf' });
+}
+
+/**
+ * Generates a cropped version of a SampleDrawing, handling both regular CAD/image sheets
+ * and vector PDF pages with offscreen caching and sub-rectangle extraction.
+ */
+export function createCroppedDrawing(
+  sheet: SampleDrawing,
+  cX: number,
+  cY: number,
+  cW: number,
+  cH: number
+): SampleDrawing {
+  const prevW = sheet.width;
+  const prevH = sheet.height;
+  const newSheetId = `${sheet.id}-crop-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
+
+  // Calculate accumulated crop coordinates in underlying source space
+  const prevCrop = sheet.cropBox || { x: 0, y: 0, width: prevW, height: prevH };
+  const normRatioX = prevCrop.width / prevW;
+  const normRatioY = prevCrop.height / prevH;
+  const accumulatedCropX = Math.round(prevCrop.x + cX * normRatioX);
+  const accumulatedCropY = Math.round(prevCrop.y + cY * normRatioY);
+  const accumulatedCropW = Math.round(cW * normRatioX);
+  const accumulatedCropH = Math.round(cH * normRatioY);
+
+  // Pre-render the cropped drawing immediately to a dedicated offscreen canvas
+  const srcCanvas = document.createElement('canvas');
+  srcCanvas.width = prevW;
+  srcCanvas.height = prevH;
+  const srcCtx = srcCanvas.getContext('2d');
+  if (srcCtx) {
+    sheet.render(srcCtx, prevW, prevH);
+  }
+
+  const croppedCanvas = document.createElement('canvas');
+  croppedCanvas.width = cW;
+  croppedCanvas.height = cH;
+  const croppedCtx = croppedCanvas.getContext('2d');
+  if (croppedCtx && srcCtx) {
+    croppedCtx.drawImage(srcCanvas, cX, cY, cW, cH, 0, 0, cW, cH);
+  }
+
+  const croppedRender = (
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    options?: { highlightDiff?: boolean }
+  ) => {
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(croppedCanvas, 0, 0, w, h);
+  };
+
+  // Vector renderer for cropped PDF sheets
+  let croppedVectorRenderer: SampleDrawing['renderVector'] = undefined;
+  if (sheet.isVectorPdf && sheet.pdfPageProxy) {
+    const page = sheet.pdfPageProxy;
+    const baseScale = sheet.pdfBaseScale || 1.0;
+
+    croppedVectorRenderer = async (
+      canvas: HTMLCanvasElement,
+      targetScale: number,
+      onTaskCreated?: (task: any) => void
+    ): Promise<{ width: number; height: number } | null> => {
+      try {
+        const effectiveScale = Math.min(2.5, Math.max(1.0, targetScale));
+        const viewport = page.getViewport({ scale: baseScale * effectiveScale });
+        const pageW = Math.round(viewport.width);
+        const pageH = Math.round(viewport.height);
+
+        const offCanvas = document.createElement('canvas');
+        offCanvas.width = pageW;
+        offCanvas.height = pageH;
+        const offCtx = offCanvas.getContext('2d', { alpha: false });
+        if (!offCtx) return null;
+        offCtx.fillStyle = '#ffffff';
+        offCtx.fillRect(0, 0, pageW, pageH);
+
+        const renderTask = page.render({
+          canvasContext: offCtx,
+          viewport,
+          intent: 'display',
+          annotationMode: pdfjsLib.AnnotationMode.ENABLE,
+        });
+        if (onTaskCreated) onTaskCreated(renderTask);
+        await renderTask.promise;
+
+        const scaleX = pageW / prevCrop.width;
+        const scaleY = pageH / prevCrop.height;
+
+        const subX = Math.round(accumulatedCropX * scaleX);
+        const subY = Math.round(accumulatedCropY * scaleY);
+        const subW = Math.round(accumulatedCropW * scaleX);
+        const subH = Math.round(accumulatedCropH * scaleY);
+
+        canvas.width = subW;
+        canvas.height = subH;
+        canvas.style.width = `${cW}px`;
+        canvas.style.height = `${cH}px`;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(offCanvas, subX, subY, subW, subH, 0, 0, subW, subH);
+        }
+        return { width: subW, height: subH };
+      } catch (err: any) {
+        if (err?.name === 'RenderingCancelledException') return null;
+        canvas.width = cW;
+        canvas.height = cH;
+        canvas.style.width = `${cW}px`;
+        canvas.style.height = `${cH}px`;
+        const ctx = canvas.getContext('2d');
+        if (ctx) ctx.drawImage(croppedCanvas, 0, 0, cW, cH);
+        return { width: cW, height: cH };
+      }
+    };
+  }
+
+  return {
+    ...sheet,
+    id: newSheetId,
+    sheetInfo: {
+      ...sheet.sheetInfo,
+      id: newSheetId,
+    },
+    width: cW,
+    height: cH,
+    cropBox: {
+      x: accumulatedCropX,
+      y: accumulatedCropY,
+      width: accumulatedCropW,
+      height: accumulatedCropH,
+    },
+    render: croppedRender,
+    renderVector: croppedVectorRenderer,
+  };
 }

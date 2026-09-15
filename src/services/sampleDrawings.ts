@@ -18,6 +18,7 @@ export interface SampleDrawing {
   pdfPageProxy?: any;
   pdfPageNumber?: number;
   pdfBaseScale?: number;
+  cropBox?: { x: number; y: number; width: number; height: number };
   renderVector?: (
     canvas: HTMLCanvasElement,
     targetScale: number,
