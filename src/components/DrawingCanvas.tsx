@@ -229,6 +229,32 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   const [isDraggingMarkup, setIsDraggingMarkup] = useState(false);
   const [dragStartPos, setDragStartPos] = useState<Point>({ x: 0, y: 0 });
 
+  // Dynamic Vector Fidelity State & Task Tracking
+  const activeRenderTaskRef = useRef<any>(null);
+  const lastRenderedScaleRef = useRef<number>(1.0);
+  const lastRenderedDrawingIdRef = useRef<string>('');
+  const [vectorFidelityStatus, setVectorFidelityStatus] = useState<'crisp' | 'rendering'>('crisp');
+
+  // RequestAnimationFrame Panning References for 60-120fps hardware-accelerated navigation
+  const panRafRef = useRef<number | null>(null);
+  const pendingPanRef = useRef<Point | null>(null);
+
+  // Clean up RAF and render tasks on unmount
+  useEffect(() => {
+    return () => {
+      if (panRafRef.current !== null) {
+        cancelAnimationFrame(panRafRef.current);
+      }
+      if (activeRenderTaskRef.current) {
+        try {
+          activeRenderTaskRef.current.cancel();
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, []);
+
   // Effective Ortho Mode (from persistent toggle or temporary Shift key hold)
   const effectiveOrtho = Boolean(orthoMode || isShiftPressed);
 
@@ -343,30 +369,93 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
   const currentColorHex = COLOR_HEX[colorCategory] || '#2563eb';
 
-  // Render base technical drawing onto baseCanvas
+  // Render base technical drawing with dynamic High-DPI Vector resolution
   useEffect(() => {
     const baseCanvas = baseCanvasRef.current;
     if (!baseCanvas || !currentDrawing) return;
+
     const w = currentDrawing.width || 1400;
     const h = currentDrawing.height || 950;
-    baseCanvas.width = w;
-    baseCanvas.height = h;
-    const ctx = baseCanvas.getContext('2d');
-    if (!ctx) return;
+    const isNewDrawing = lastRenderedDrawingIdRef.current !== currentDrawing.id;
 
-    try {
-      if (typeof currentDrawing.render === 'function') {
-        currentDrawing.render(ctx, w, h);
-      } else {
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, w, h);
+    // Fast synchronous preview: draw existing cached or basic render first so user sees sheet with 0ms delay
+    if (isNewDrawing) {
+      baseCanvas.width = w;
+      baseCanvas.height = h;
+      baseCanvas.style.width = `${w}px`;
+      baseCanvas.style.height = `${h}px`;
+      const ctx = baseCanvas.getContext('2d', { alpha: false });
+      if (ctx) {
+        try {
+          if (typeof currentDrawing.render === 'function') {
+            currentDrawing.render(ctx, w, h);
+          } else {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, w, h);
+          }
+        } catch (renderErr) {
+          console.warn('Error executing sheet preview render:', renderErr);
+        }
       }
-    } catch (renderErr) {
-      console.warn('Error executing sheet render:', renderErr);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, w, h);
     }
-  }, [currentDrawing]);
+
+    // Cancel any previous vector render task
+    if (activeRenderTaskRef.current) {
+      try {
+        activeRenderTaskRef.current.cancel();
+      } catch {
+        // ignore cancellation
+      }
+      activeRenderTaskRef.current = null;
+    }
+
+    const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+    const targetScale = Math.min(3.5, Math.max(1.0, zoom * dpr));
+
+    // If this drawing has direct vector rendering (PDF vector linework)
+    if (typeof currentDrawing.renderVector === 'function') {
+      const scaleDiff = Math.abs(targetScale - lastRenderedScaleRef.current) / (lastRenderedScaleRef.current || 1);
+      // If drawing changed or scale changed significantly (>18%)
+      if (isNewDrawing || scaleDiff > 0.18) {
+        setVectorFidelityStatus('rendering');
+        const timeoutId = setTimeout(() => {
+          if (!baseCanvasRef.current) return;
+          currentDrawing
+            .renderVector!(baseCanvasRef.current, targetScale, (task) => {
+              activeRenderTaskRef.current = task;
+            })
+            .then((res) => {
+              if (res) {
+                lastRenderedScaleRef.current = targetScale;
+                lastRenderedDrawingIdRef.current = currentDrawing.id;
+                setVectorFidelityStatus('crisp');
+              }
+            })
+            .catch((err) => {
+              if (err?.name !== 'RenderingCancelledException') {
+                console.warn('Vector re-render note:', err);
+              }
+            });
+        }, isNewDrawing ? 10 : 120);
+
+        return () => {
+          clearTimeout(timeoutId);
+          if (activeRenderTaskRef.current) {
+            try {
+              activeRenderTaskRef.current.cancel();
+            } catch {
+              // ignore
+            }
+          }
+        };
+      }
+    } else {
+      // Standard CAD or sample drawing
+      lastRenderedDrawingIdRef.current = currentDrawing.id;
+      lastRenderedScaleRef.current = 1.0;
+      setVectorFidelityStatus('crisp');
+    }
+  }, [currentDrawing, zoom]);
 
   // Screen coordinate to Drawing coordinate transform
   const screenToDrawing = useCallback(
@@ -1511,14 +1600,28 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (isPanning) {
-      setPan({
+      pendingPanRef.current = {
         x: e.clientX - panStart.x,
         y: e.clientY - panStart.y,
-      });
+      };
+      if (panRafRef.current === null) {
+        panRafRef.current = requestAnimationFrame(() => {
+          panRafRef.current = null;
+          if (pendingPanRef.current) {
+            setPan(pendingPanRef.current);
+          }
+        });
+      }
       return;
     }
 
     const rawPos = screenToDrawing(e.clientX, e.clientY);
+
+    // Skip expensive point calculations if just hovering while pan mode is active
+    if (activeTool === 'pan' && !isDraggingMarkup) {
+      return;
+    }
+
     const snapped = findSnapPoint(rawPos);
     let targetPos = snapped || rawPos;
 
@@ -1582,6 +1685,14 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
   const handleMouseUp = () => {
     if (isPanning) {
+      if (panRafRef.current !== null) {
+        cancelAnimationFrame(panRafRef.current);
+        panRafRef.current = null;
+      }
+      if (pendingPanRef.current) {
+        setPan(pendingPanRef.current);
+        pendingPanRef.current = null;
+      }
       setIsPanning(false);
     }
     if (isDraggingMarkup) {
@@ -1854,12 +1965,15 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       >
         <div
           style={{
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom}) rotate(${rotation}deg)`,
+            transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom}) rotate(${rotation}deg)`,
             transformOrigin: '0 0',
             width: currentDrawing.width,
             height: currentDrawing.height,
+            willChange: isPanning ? 'transform' : 'auto',
+            backfaceVisibility: 'hidden',
+            WebkitBackfaceVisibility: 'hidden',
           }}
-          className="relative shadow-2xl bg-white"
+          className="relative shadow-2xl bg-white select-none"
         >
           {/* Base Technical Drawing Canvas */}
           <canvas
@@ -2138,14 +2252,39 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         </div>
 
         {/* Right: Zoom & Navigation Controls */}
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setRotation((r) => (r + 90) % 360)}
-            title="Rotate 90°"
-            className="p-1 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded"
-          >
-            <RotateCw className="w-3.5 h-3.5" />
-          </button>
+        <div className="flex items-center gap-2">
+          {currentDrawing.isVectorPdf && (
+            <div
+              title="Vector engine active: Linework rendered directly in browser from local file"
+              className={`hidden lg:flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-mono border transition-all select-none ${
+                vectorFidelityStatus === 'rendering'
+                  ? 'bg-blue-950/60 border-blue-500/30 text-blue-300'
+                  : 'bg-emerald-950/60 border-emerald-500/30 text-emerald-300'
+              }`}
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  vectorFidelityStatus === 'rendering'
+                    ? 'bg-blue-400 animate-pulse'
+                    : 'bg-emerald-400'
+                }`}
+              />
+              <span>
+                {vectorFidelityStatus === 'rendering'
+                  ? 'UPDATING VECTOR DENSITY...'
+                  : `VECTOR CAD CRISP (${Math.round(zoom * 100)}%)`}
+              </span>
+            </div>
+          )}
+
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setRotation((r) => (r + 90) % 360)}
+              title="Rotate 90°"
+              className="p-1 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+            </button>
 
           <button
             onClick={handleFitPage}
@@ -2190,7 +2329,8 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             </button>
           </div>
         </div>
-      </footer>
-    </div>
-  );
+      </div>
+    </footer>
+  </div>
+);
 };

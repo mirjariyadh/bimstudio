@@ -13,6 +13,16 @@ export interface SampleDrawing {
   revisionHistory?: RevisionHistoryItem[];
   render: (ctx: CanvasRenderingContext2D, width: number, height: number, options?: { highlightDiff?: boolean }) => void;
   extractedText: string;
+  isVectorPdf?: boolean;
+  pdfDocProxy?: any;
+  pdfPageProxy?: any;
+  pdfPageNumber?: number;
+  pdfBaseScale?: number;
+  renderVector?: (
+    canvas: HTMLCanvasElement,
+    targetScale: number,
+    onTaskCreated?: (task: any) => void
+  ) => Promise<{ width: number; height: number } | null>;
 }
 
 // Drawing helper routines

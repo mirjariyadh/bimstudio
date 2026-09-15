@@ -138,38 +138,40 @@ export async function loadDrawingFilesAsSheets(
     const numPages = pdfDoc.numPages;
     const sheets: SampleDrawing[] = [];
 
+    // Instant local initialization and vector sheet construction
     for (let p = 1; p <= numPages; p++) {
-      const pagePercent = Math.min(95, Math.round(25 + ((p - 0.5) / numPages) * 70));
+      const pagePercent = Math.min(95, Math.round(15 + (p / numPages) * 75));
       if (onProgress) {
         onProgress(
           p,
           numPages,
-          `Rendering Sheet ${p} of ${numPages} in High-DPI Vector Canvas...`,
+          numPages > 1
+            ? `Reading vector drawing ${p} of ${numPages} directly from local file...`
+            : `Initializing crisp vector linework directly in browser...`,
           pagePercent
         );
       }
       const page = await pdfDoc.getPage(p);
+      const baseViewport = page.getViewport({ scale: 1.0 });
 
-      // Render at 2.0x scale for crisp architectural CAD vector line weights and small text
-      const viewport = page.getViewport({ scale: 2.0 });
-
-      const offscreen = document.createElement('canvas');
-      offscreen.width = viewport.width;
-      offscreen.height = viewport.height;
-      const offCtx = offscreen.getContext('2d');
-      if (offCtx) {
-        await page.render({
-          canvasContext: offCtx,
-          viewport,
-        }).promise;
+      // Determine appropriate logical baseScale to maintain CAD coordinate precision
+      let baseScale = 1.0;
+      if (baseViewport.width < 1200) {
+        baseScale = Math.min(2.0, Math.max(1.0, 1600 / baseViewport.width));
       }
 
+      const sheetWidth = Math.round(baseViewport.width * baseScale);
+      const sheetHeight = Math.round(baseViewport.height * baseScale);
+
       let extractedText = '';
-      try {
-        const textContent = await page.getTextContent();
-        extractedText = textContent.items.map((it: any) => it.str || '').join(' ');
-      } catch {
-        // ignore extraction failures
+      // Extract text content immediately for page 1 or small sets (< 12 pages)
+      if (p === 1 || numPages <= 12) {
+        try {
+          const textContent = await page.getTextContent();
+          extractedText = textContent.items.map((it: any) => it.str || '').join(' ');
+        } catch {
+          // ignore extraction failures
+        }
       }
 
       // Title & Sheet number heuristic detection
@@ -193,6 +195,82 @@ export async function loadDrawingFilesAsSheets(
       const sheetTitle = numPages === 1 ? cleanDocName : `${cleanDocName} - Page ${p}`;
       const sheetId = `PDF-${Date.now()}-P${p}-${Math.random().toString(36).slice(2, 6)}`;
 
+      // Internal cached high-DPI canvas to avoid re-rendering if unchanged
+      let cachedCanvas: HTMLCanvasElement | null = null;
+      let isRendering = false;
+
+      const vectorRenderer = async (
+        canvas: HTMLCanvasElement,
+        targetScale: number,
+        onTaskCreated?: (task: any) => void
+      ): Promise<{ width: number; height: number } | null> => {
+        // Clamp scale to safe GPU texture bounds (max 4096px to prevent WebGL/Canvas buffer overflow)
+        const maxDim = Math.max(sheetWidth, sheetHeight);
+        const maxAllowedScale = Math.max(1.0, 4096 / maxDim);
+        const effectiveScale = Math.min(Math.max(0.75, targetScale), maxAllowedScale);
+
+        const renderViewport = page.getViewport({ scale: baseScale * effectiveScale });
+        const targetW = Math.round(renderViewport.width);
+        const targetH = Math.round(renderViewport.height);
+
+        canvas.width = targetW;
+        canvas.height = targetH;
+        canvas.style.width = `${sheetWidth}px`;
+        canvas.style.height = `${sheetHeight}px`;
+
+        const ctx = canvas.getContext('2d', { alpha: false });
+        if (!ctx) return null;
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, targetW, targetH);
+
+        const renderTask = page.render({
+          canvasContext: ctx,
+          viewport: renderViewport,
+          intent: 'display',
+          annotationMode: pdfjsLib.AnnotationMode.ENABLE,
+        });
+
+        if (onTaskCreated) onTaskCreated(renderTask);
+
+        try {
+          await renderTask.promise;
+          cachedCanvas = canvas;
+          return { width: targetW, height: targetH };
+        } catch (err: any) {
+          if (err?.name === 'RenderingCancelledException') {
+            return null;
+          }
+          console.warn('PDF vector render warning:', err);
+          return null;
+        }
+      };
+
+      // For page 1, create initial high-fidelity canvas immediately so display is instant
+      if (p === 1) {
+        try {
+          const initCanvas = document.createElement('canvas');
+          const initScale = 1.5;
+          const initViewport = page.getViewport({ scale: baseScale * initScale });
+          initCanvas.width = Math.round(initViewport.width);
+          initCanvas.height = Math.round(initViewport.height);
+          const initCtx = initCanvas.getContext('2d', { alpha: false });
+          if (initCtx) {
+            initCtx.fillStyle = '#ffffff';
+            initCtx.fillRect(0, 0, initCanvas.width, initCanvas.height);
+            await page.render({
+              canvasContext: initCtx,
+              viewport: initViewport,
+              intent: 'display',
+              annotationMode: pdfjsLib.AnnotationMode.ENABLE,
+            }).promise;
+            cachedCanvas = initCanvas;
+          }
+        } catch (initErr) {
+          console.warn('Page 1 initial render warning:', initErr);
+        }
+      }
+
       sheets.push({
         id: sheetId,
         sheetInfo: {
@@ -206,15 +284,47 @@ export async function loadDrawingFilesAsSheets(
           projectName: cleanDocName,
           pageIndex: basePageIndex + p - 1,
         },
-        width: Math.round(viewport.width),
-        height: Math.round(viewport.height),
+        width: sheetWidth,
+        height: sheetHeight,
         extractedText: extractedText || `Page ${p} of ${file.name}`,
+        isVectorPdf: true,
+        pdfDocProxy: pdfDoc,
+        pdfPageProxy: page,
+        pdfPageNumber: p,
+        pdfBaseScale: baseScale,
+        renderVector: vectorRenderer,
         render: (ctx, w, h) => {
-          ctx.drawImage(offscreen, 0, 0, w, h);
+          if (cachedCanvas) {
+            ctx.drawImage(cachedCanvas, 0, 0, w, h);
+          } else {
+            // Placeholder while async vector render resolves
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, w, h);
+            ctx.strokeStyle = '#e2e8f0';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(30, 30, w - 60, h - 60);
+
+            ctx.fillStyle = '#0f172a';
+            ctx.font = 'bold 20px monospace';
+            ctx.fillText(`Sheet ${detectedNumber} - ${sheetTitle}`, 60, 90);
+
+            ctx.fillStyle = '#64748b';
+            ctx.font = '14px sans-serif';
+            ctx.fillText('Vector linework rendering directly in browser...', 60, 125);
+
+            if (!isRendering) {
+              isRendering = true;
+              const off = document.createElement('canvas');
+              vectorRenderer(off, 1.5).then(() => {
+                isRendering = false;
+              });
+            }
+          }
         },
       });
     }
 
+    if (onProgress) onProgress(numPages, numPages, 'Vector PDF ready for real-time CAD navigation.', 100);
     return sheets;
   } catch (pdfJsErr) {
     console.warn('PDF.js rendering warning, attempting pdf-lib fallback:', pdfJsErr);
