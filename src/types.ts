@@ -329,5 +329,12 @@ export interface ExportPdfModalOptions {
   includeStamps: boolean;
   flattenMarkups: boolean;
   scope: 'current' | 'all';
+  customFileName?: string;
+}
+
+export interface SaveFileModalOptions {
+  fileName: string;
+  fileType: 'bsp' | 'pdf';
+  scope?: 'current' | 'all';
 }
 

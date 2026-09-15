@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   FileDown,
   X,
@@ -38,7 +38,17 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
   const [includeStamps, setIncludeStamps] = useState(true);
   const [flattenMarkups, setFlattenMarkups] = useState(false);
   const [scope, setScope] = useState<'current' | 'all'>('current');
+  const [customFileName, setCustomFileName] = useState('');
   const [isExporting, setIsExporting] = useState(false);
+
+  // Set default filename whenever scope or sheet changes
+  useEffect(() => {
+    const base = (currentSheet.projectName || currentSheet.title || 'Drawing').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const defaultName = scope === 'all'
+      ? `${base}_Complete_Set_Export`
+      : `${(currentSheet.sheetNumber || 'Sheet')}_${(currentSheet.title || 'Export').replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    setCustomFileName(defaultName);
+  }, [currentSheet, scope, isOpen]);
 
   if (!isOpen) return null;
 
@@ -51,6 +61,7 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
         includeStamps,
         flattenMarkups,
         scope,
+        customFileName: customFileName.trim() ? customFileName.trim() : undefined,
       });
       onClose();
     } catch (err) {
@@ -85,6 +96,30 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
 
         {/* Content Options */}
         <div className="p-5 space-y-4 text-xs text-slate-200">
+          {/* File Name Field */}
+          <div>
+            <label htmlFor="export-pdf-filename-input" className="block text-[11px] uppercase tracking-wider font-bold text-slate-400 mb-1.5">
+              Export File Name
+            </label>
+            <div className="relative flex items-center">
+              <input
+                id="export-pdf-filename-input"
+                type="text"
+                value={customFileName}
+                onChange={(e) => setCustomFileName(e.target.value)}
+                disabled={isExporting}
+                placeholder="Enter export file name..."
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-3 pr-14 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/40 font-medium"
+              />
+              <span className="absolute right-2 px-2 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-[11px] text-slate-300 select-none">
+                .pdf
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-500 mt-1">
+              File will be saved as: <span className="text-slate-300 font-mono">{customFileName.trim() ? (customFileName.endsWith('.pdf') ? customFileName : `${customFileName}.pdf`) : 'export.pdf'}</span>
+            </p>
+          </div>
+
           {/* Scope Selector */}
           <div>
             <label className="block text-[11px] uppercase tracking-wider font-bold text-slate-400 mb-2">

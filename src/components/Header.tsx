@@ -181,9 +181,16 @@ export const Header: React.FC<HeaderProps> = ({
                 PRO
               </span>
             </div>
-            <div className="text-[10px] text-slate-400 truncate max-w-[170px]">
-              {currentSheet.projectName}
-            </div>
+            <button
+              id="header-project-name-btn"
+              type="button"
+              onClick={() => onSaveProject(true)}
+              title="Click to rename project file (Save Project As...)"
+              className="group flex items-center gap-1 text-[10px] text-slate-400 hover:text-blue-300 transition-colors text-left truncate max-w-[170px] cursor-pointer"
+            >
+              <span className="truncate font-medium">{projectFileName || currentSheet.projectName || 'Untitled Project.bsp'}</span>
+              <Edit3 className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity text-blue-400 shrink-0" />
+            </button>
           </div>
         </div>
 
@@ -572,27 +579,38 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="inline">Open Project</span>
           </button>
 
-          {/* Primary Save Project (.bsp) Button */}
-          <button
-            id="save-project-header-button"
-            onClick={() => onSaveProject(false)}
-            disabled={isSavingProject || availableSheets.length === 0}
-            title={
-              projectFileName
-                ? `Save editable project to "${projectFileName}" (Ctrl+S)`
-                : 'Save Project (.bsp) - Preserves all markups, polylines, calibrations & edits (Ctrl+S)'
-            }
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-all shadow-xs cursor-pointer disabled:opacity-50"
-          >
-            {isSavingProject ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-200" />
-            ) : (
-              <Save className="w-3.5 h-3.5 text-blue-100" />
-            )}
-            <span className="inline">
-              {isSavingProject ? 'Saving...' : 'Save Project'}
-            </span>
-          </button>
+          {/* Primary Save Project (.bsp) Button Group */}
+          <div className="flex items-center">
+            <button
+              id="save-project-header-button"
+              onClick={() => onSaveProject(false)}
+              disabled={isSavingProject || availableSheets.length === 0}
+              title={
+                projectFileName
+                  ? `Save editable project to "${projectFileName}" (Ctrl+S)`
+                  : 'Save Project (.bsp) - Choose name and preserve all markups (Ctrl+S)'
+              }
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-l-lg transition-all shadow-xs cursor-pointer disabled:opacity-50"
+            >
+              {isSavingProject ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-200" />
+              ) : (
+                <Save className="w-3.5 h-3.5 text-blue-100" />
+              )}
+              <span className="inline">
+                {isSavingProject ? 'Saving...' : 'Save Project'}
+              </span>
+            </button>
+            <button
+              id="save-project-as-header-button"
+              onClick={() => onSaveProject(true)}
+              disabled={isSavingProject || availableSheets.length === 0}
+              title="Save Project As... (Name file & choose destination)"
+              className="px-1.5 py-1.5 text-xs font-semibold bg-blue-700 hover:bg-blue-600 text-blue-100 border-l border-blue-500/40 rounded-r-lg transition-all shadow-xs cursor-pointer disabled:opacity-50"
+            >
+              <ChevronDown className="w-3 h-3" />
+            </button>
+          </div>
 
           {/* Primary Open PDF Button */}
           <button
@@ -605,33 +623,48 @@ export const Header: React.FC<HeaderProps> = ({
             <span>Open PDF</span>
           </button>
 
-          {/* Dedicated Save PDF Button (Direct source disk write) */}
-          <button
-            id="save-pdf-source-button"
-            onClick={() => onSaveToSource(false)}
-            disabled={isSavingToSource || availableSheets.length === 0}
-            title={
-              hasSourceHandle
-                ? `Save PDF directly back to "${sourceFileName}" on disk`
-                : sourceFileName
-                ? `Save PDF back to "${sourceFileName}"`
-                : 'Save PDF file'
-            }
-            className={`hidden sm:flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all shadow-xs cursor-pointer disabled:opacity-50 ${
-              hasSourceHandle
-                ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/40'
-                : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
-            }`}
-          >
-            {isSavingToSource ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-300" />
-            ) : (
-              <HardDrive className={`w-3.5 h-3.5 ${hasSourceHandle ? 'text-white' : 'text-emerald-400'}`} />
-            )}
-            <span className="inline">
-              {isSavingToSource ? 'Saving...' : 'Save PDF'}
-            </span>
-          </button>
+          {/* Dedicated Save PDF Button Group */}
+          <div className="hidden sm:flex items-center">
+            <button
+              id="save-pdf-source-button"
+              onClick={() => onSaveToSource(false)}
+              disabled={isSavingToSource || availableSheets.length === 0}
+              title={
+                hasSourceHandle
+                  ? `Save PDF directly back to "${sourceFileName}" on disk`
+                  : sourceFileName
+                  ? `Save PDF back to "${sourceFileName}"`
+                  : 'Save PDF file'
+              }
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-l-lg transition-all shadow-xs cursor-pointer disabled:opacity-50 ${
+                hasSourceHandle
+                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/40'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 border-r-0'
+              }`}
+            >
+              {isSavingToSource ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-300" />
+              ) : (
+                <HardDrive className={`w-3.5 h-3.5 ${hasSourceHandle ? 'text-white' : 'text-emerald-400'}`} />
+              )}
+              <span className="inline">
+                {isSavingToSource ? 'Saving...' : 'Save PDF'}
+              </span>
+            </button>
+            <button
+              id="save-pdf-as-header-button"
+              onClick={() => onSaveToSource(true)}
+              disabled={isSavingToSource || availableSheets.length === 0}
+              title="Save As New PDF... (Name PDF file & choose scope)"
+              className={`px-1.5 py-1.5 text-xs font-semibold rounded-r-lg transition-all shadow-xs cursor-pointer disabled:opacity-50 ${
+                hasSourceHandle
+                  ? 'bg-emerald-700 hover:bg-emerald-600 text-emerald-100 border-l border-emerald-500/40'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700'
+              }`}
+            >
+              <ChevronDown className="w-3 h-3" />
+            </button>
+          </div>
 
           <FileText className="w-4 h-4 text-slate-400 shrink-0 ml-1" />
           {availableSheets.length > 0 ? (

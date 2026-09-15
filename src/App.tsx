@@ -31,6 +31,7 @@ import { DocumentPropertiesModal } from './components/editPdf/DocumentProperties
 import { FlattenModal } from './components/editPdf/FlattenModal';
 import { ClearMarkupsModal } from './components/ClearMarkupsModal';
 import { ExportPdfModal } from './components/ExportPdfModal';
+import { SaveFileModal } from './components/SaveFileModal';
 import { OpenPdfModal } from './components/OpenPdfModal';
 import { FileProcessingProgressModal } from './components/FileProcessingProgressModal';
 import { FileProcessingFloatingBar } from './components/FileProcessingFloatingBar';
@@ -53,6 +54,7 @@ import {
   PageNumberingConfig,
   DocumentProperties,
   ExportPdfModalOptions,
+  SaveFileModalOptions,
 } from './types';
 import { ALL_SAMPLE_DRAWINGS, SampleDrawing } from './services/sampleDrawings';
 import { downloadFile } from './services/exportService';
@@ -1006,111 +1008,44 @@ export default function App() {
     }
   };
 
-  // Save PDF Directly back to Source Location where opened from
-  const handleSaveToSourceLocation = async (forceSaveAs = false) => {
+  // Modal state for naming files on Save / Save As
+  const [saveModalConfig, setSaveModalConfig] = useState<{
+    isOpen: boolean;
+    fileType: 'bsp' | 'pdf';
+    isSaveAs: boolean;
+    initialFileName: string;
+  }>({
+    isOpen: false,
+    fileType: 'bsp',
+    isSaveAs: false,
+    initialFileName: '',
+  });
+
+  const handleOpenSaveModal = (fileType: 'bsp' | 'pdf', isSaveAs = false) => {
     if (!sheets || sheets.length === 0) {
       addToast('No Project to Save', 'Please open a drawing or PDF before saving.', 'warning');
       return;
     }
+    const defaultName = fileType === 'bsp'
+      ? (projectFileName || currentDrawing?.sheetInfo.projectName || currentDrawing?.sheetInfo.title || 'BIM_Project.bsp')
+      : (sourceFileName || currentDrawing?.sheetInfo.projectName || currentDrawing?.sheetInfo.title || 'BIM_Drawing.pdf');
 
-    setIsSavingToSource(true);
-    try {
-      addToast(
-        'Rendering PDF Project',
-        'Compiling sheets, vector markups, takeoff layers, and dimensions...',
-        'info'
-      );
-
-      // Render full document with all sheets & markups
-      const pdfBlob = await exportPdfDocument({
-        sheets: sheets,
-        markups: markups,
-        mode: 'edited',
-        countCategories: countCategories,
-      });
-
-      const cleanBaseName = (
-        sourceFileName ||
-        currentDrawing?.sheetInfo.projectName ||
-        currentDrawing?.sheetInfo.title ||
-        'BIM_Drawing_Project'
-      ).replace(/(\.pdf)+$/i, '');
-      const suggestedFileName = `${cleanBaseName}.pdf`;
-
-      // 1. If we have an active FileSystemFileHandle and this is not a forced "Save As", write directly to it!
-      if (sourceFileHandle && !forceSaveAs) {
-        try {
-          await writeBlobToSourceFileHandle(sourceFileHandle, pdfBlob);
-          setAutosaveStatus('saved');
-          const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-          setLastSavedTime(timeStr);
-          addToast(
-            'Saved to Original Location',
-            `Successfully overwritten "${sourceFileName || sourceFileHandle.name}" on disk at its original location (${timeStr}).`,
-            'success'
-          );
-          return;
-        } catch (handleWriteErr: any) {
-          console.warn('Direct file handle write was denied or expired:', handleWriteErr);
-          addToast(
-            'Disk Write Confirmation',
-            'Please select the destination file to re-authorize saving to disk.',
-            'info'
-          );
-        }
-      }
-
-      // 2. If File System Access API is supported, prompt native Save File Picker
-      if (isFileSystemAccessSupported()) {
-        try {
-          const newHandle = await saveBlobWithSaveFilePicker(suggestedFileName, pdfBlob);
-          setSourceFileHandle(newHandle);
-          setSourceFileName(newHandle.name);
-          setAutosaveStatus('saved');
-          const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-          setLastSavedTime(timeStr);
-          addToast(
-            'File Saved & Linked',
-            `Saved to "${newHandle.name}". Future clicks on "Save PDF" will overwrite this file directly.`,
-            'success'
-          );
-          return;
-        } catch (pickerErr: any) {
-          if (pickerErr?.name === 'AbortError') {
-            addToast('Save Cancelled', 'File was not saved.', 'info');
-            return;
-          }
-          console.warn('Native save file picker failed, falling back to download:', pickerErr);
-        }
-      }
-
-      // 3. Standard browser download fallback
-      triggerBrowserDownload(pdfBlob, suggestedFileName);
-      setAutosaveStatus('saved');
-      setSourceFileName(suggestedFileName);
-      addToast(
-        'PDF Project Saved',
-        `Downloaded "${suggestedFileName}". (Browser does not permit direct in-place disk overwrite).`,
-        'success'
-      );
-    } catch (err: any) {
-      console.error('Save to source error:', err);
-      addToast('Save Failed', err?.message || 'Could not save PDF project to source location.', 'warning');
-    } finally {
-      setIsSavingToSource(false);
-    }
+    setSaveModalConfig({
+      isOpen: true,
+      fileType,
+      isSaveAs,
+      initialFileName: defaultName,
+    });
   };
 
-  const saveToSourceRef = useRef(handleSaveToSourceLocation);
-  saveToSourceRef.current = handleSaveToSourceLocation;
-
-  // BIM Studio Project (.bsp) Save & Load handlers
-  const handleSaveProject = async (forceSaveAs = false) => {
+  // Direct worker for saving BSP project with custom filename
+  const executeSaveProject = async (targetFileName: string, forceSaveAs = false) => {
     setIsSavingProject(true);
     try {
-      addToast('Saving Project', 'Compiling complete BIM Studio project package (.bsp)...', 'info');
+      addToast('Saving Project', `Compiling "${targetFileName}" (.bsp)...`, 'info');
+      const cleanProjectTitle = targetFileName.replace(/\.bsp$/i, '');
       const bspData = await createBspProject({
-        projectName: (projectFileName || 'BIM_Project').replace(/\.bsp$/i, ''),
+        projectName: cleanProjectTitle,
         sheets,
         currentSheetId,
         markups,
@@ -1131,7 +1066,7 @@ export default function App() {
 
       const result = await saveBspFile(
         bspData,
-        projectFileName,
+        targetFileName,
         forceSaveAs ? undefined : (projectFileHandle || undefined)
       );
 
@@ -1140,6 +1075,8 @@ export default function App() {
       }
       setProjectFileName(result.filename);
       setAutosaveStatus('saved');
+      const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      setLastSavedTime(timeStr);
       addToast(
         'Project Saved (.bsp)',
         `Saved full editable workspace to "${result.filename}". All markups, polylines, and calibrations preserved.`,
@@ -1156,6 +1093,135 @@ export default function App() {
       setIsSavingProject(false);
     }
   };
+
+  // Direct worker for saving PDF with custom filename & scope
+  const executeSavePdf = async (targetFileName: string, scope: 'current' | 'all' = 'all', forceSaveAs = false) => {
+    setIsSavingToSource(true);
+    try {
+      addToast(
+        'Rendering PDF Project',
+        `Compiling "${targetFileName}"...`,
+        'info'
+      );
+
+      const targetSheets = scope === 'current' && currentDrawing ? [currentDrawing] : sheets;
+      const targetMarkups = scope === 'current' && currentDrawing ? pageMarkups : markups;
+
+      const pdfBlob = await exportPdfDocument({
+        sheets: targetSheets,
+        markups: targetMarkups,
+        mode: 'edited',
+        countCategories,
+      });
+
+      // 1. If we have active FileSystemFileHandle and this is not a forced Save As with a different filename
+      if (sourceFileHandle && !forceSaveAs && sourceFileHandle.name.toLowerCase() === targetFileName.toLowerCase()) {
+        try {
+          await writeBlobToSourceFileHandle(sourceFileHandle, pdfBlob);
+          setAutosaveStatus('saved');
+          const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          setLastSavedTime(timeStr);
+          addToast(
+            'Saved to Original Location',
+            `Successfully overwritten "${targetFileName}" on disk at its original location (${timeStr}).`,
+            'success'
+          );
+          return;
+        } catch (handleWriteErr: any) {
+          console.warn('Direct file handle write was denied or expired:', handleWriteErr);
+          addToast(
+            'Disk Write Confirmation',
+            'Please select the destination file to re-authorize saving to disk.',
+            'info'
+          );
+        }
+      }
+
+      // 2. If File System Access API is supported, prompt native Save File Picker
+      if (isFileSystemAccessSupported()) {
+        try {
+          const newHandle = await saveBlobWithSaveFilePicker(targetFileName, pdfBlob);
+          setSourceFileHandle(newHandle);
+          setSourceFileName(newHandle.name);
+          setAutosaveStatus('saved');
+          const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          setLastSavedTime(timeStr);
+          addToast(
+            'File Saved & Linked',
+            `Saved to "${newHandle.name}". Future clicks on "Save PDF" will overwrite this file directly.`,
+            'success'
+          );
+          return;
+        } catch (pickerErr: any) {
+          if (pickerErr?.name === 'AbortError') {
+            addToast('Save Cancelled', 'File was not saved.', 'info');
+            return;
+          }
+          console.warn('Native save file picker failed, falling back to download:', pickerErr);
+        }
+      }
+
+      // 3. Standard browser download fallback with user-specified targetFileName
+      triggerBrowserDownload(pdfBlob, targetFileName);
+      setAutosaveStatus('saved');
+      setSourceFileName(targetFileName);
+      const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      setLastSavedTime(timeStr);
+      addToast(
+        'PDF Project Saved',
+        `Downloaded "${targetFileName}".`,
+        'success'
+      );
+    } catch (err: any) {
+      console.error('Save to source error:', err);
+      addToast('Save Failed', err?.message || 'Could not save PDF project.', 'warning');
+    } finally {
+      setIsSavingToSource(false);
+    }
+  };
+
+  // Called when clicking "Save PDF" or "Save As New PDF..."
+  const handleSaveToSourceLocation = async (forceSaveAs = false) => {
+    if (!sheets || sheets.length === 0) {
+      addToast('No Project to Save', 'Please open a drawing or PDF before saving.', 'warning');
+      return;
+    }
+    // If Save As, or if no source file handle exists yet, prompt the user with SaveFileModal so they can name their file!
+    if (forceSaveAs || !sourceFileHandle) {
+      handleOpenSaveModal('pdf', forceSaveAs);
+      return;
+    }
+    // If we have an existing sourceFileHandle and forceSaveAs is false, save directly
+    await executeSavePdf(sourceFileName || sourceFileHandle.name, 'all', false);
+  };
+
+  // Called when clicking "Save Project" or "Save Project As..."
+  const handleSaveProject = async (forceSaveAs = false) => {
+    if (!sheets || sheets.length === 0) {
+      addToast('No Project to Save', 'Please open or create a drawing before saving.', 'warning');
+      return;
+    }
+    // If Save As, or if project has never been saved/named, prompt the user with SaveFileModal so they can name their file!
+    const isUntitled = !projectFileName || projectFileName === 'BIM_Project.bsp';
+    if (forceSaveAs || isUntitled) {
+      handleOpenSaveModal('bsp', forceSaveAs);
+      return;
+    }
+    // If project already has a chosen file name, directly save to it
+    await executeSaveProject(projectFileName, false);
+  };
+
+  // Handle confirmation from the SaveFileModal
+  const handleConfirmSaveModal = async (options: SaveFileModalOptions) => {
+    if (options.fileType === 'bsp') {
+      await executeSaveProject(options.fileName, saveModalConfig.isSaveAs);
+    } else {
+      await executeSavePdf(options.fileName, options.scope || 'all', saveModalConfig.isSaveAs);
+    }
+  };
+
+  const saveToSourceRef = useRef(handleSaveToSourceLocation);
+  saveToSourceRef.current = handleSaveToSourceLocation;
 
   const saveProjectRef = useRef(handleSaveProject);
   saveProjectRef.current = handleSaveProject;
@@ -1296,10 +1362,16 @@ export default function App() {
         countCategories,
       });
 
-      const baseName = (currentDrawing.sheetInfo.projectName || currentDrawing.sheetInfo.title || 'Drawing').replace(/[^a-zA-Z0-9_-]/g, '_');
-      const fileName = options.scope === 'all'
-        ? `${baseName}_Complete_Set_${options.flattenMarkups ? 'Flattened' : 'Export'}.pdf`
-        : `${(currentDrawing.sheetInfo.sheetNumber || 'Sheet')}_${options.flattenMarkups ? 'Flattened' : 'Export'}.pdf`;
+      let fileName: string;
+      if (options.customFileName && options.customFileName.trim()) {
+        const trimmed = options.customFileName.trim();
+        fileName = trimmed.toLowerCase().endsWith('.pdf') ? trimmed : `${trimmed}.pdf`;
+      } else {
+        const baseName = (currentDrawing.sheetInfo.projectName || currentDrawing.sheetInfo.title || 'Drawing').replace(/[^a-zA-Z0-9_-]/g, '_');
+        fileName = options.scope === 'all'
+          ? `${baseName}_Complete_Set_${options.flattenMarkups ? 'Flattened' : 'Export'}.pdf`
+          : `${(currentDrawing.sheetInfo.sheetNumber || 'Sheet')}_${options.flattenMarkups ? 'Flattened' : 'Export'}.pdf`;
+      }
 
       downloadFile(pdfBlob, fileName, 'application/pdf');
       setIsExportModalOpen(false);
@@ -1960,6 +2032,19 @@ export default function App() {
         onConfirmExport={handleConfirmExportPdfModal}
         currentSheet={activeSheetInfo}
         sheetCount={sheets.length}
+      />
+
+      {/* Save File / Save As Modal for file naming */}
+      <SaveFileModal
+        isOpen={saveModalConfig.isOpen}
+        onClose={() => setSaveModalConfig(prev => ({ ...prev, isOpen: false }))}
+        fileType={saveModalConfig.fileType}
+        isSaveAs={saveModalConfig.isSaveAs}
+        currentFileName={saveModalConfig.initialFileName}
+        sheetCount={sheets.length}
+        currentSheetName={currentDrawing?.sheetInfo.title || currentDrawing?.sheetInfo.sheetNumber || 'Sheet'}
+        markupCount={markups.length}
+        onConfirmSave={handleConfirmSaveModal}
       />
 
       {/* Open PDF Modal: Replace vs Append */}
