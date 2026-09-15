@@ -184,6 +184,9 @@ interface DrawingCanvasProps {
   activeCountCategory: string;
   countCategories: Array<{ id: string; name: string; color: string; count: number }>;
   activePolylineName?: string;
+  selectedMarkupId?: string | null;
+  onSelectMarkup?: (id: string | null) => void;
+  focusMarkupTrigger?: { id: string; timestamp: number } | null;
 }
 
 export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
@@ -207,6 +210,9 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   activeCountCategory,
   countCategories,
   activePolylineName = '',
+  selectedMarkupId: externalSelectedMarkupId,
+  onSelectMarkup,
+  focusMarkupTrigger,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const baseCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -225,7 +231,15 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   const [currentPoints, setCurrentPoints] = useState<Point[]>([]);
   const [hoverPos, setHoverPos] = useState<Point | null>(null);
   const [snapPoint, setSnapPoint] = useState<Point | null>(null);
-  const [selectedMarkupId, setSelectedMarkupId] = useState<string | null>(null);
+  const [internalSelectedMarkupId, setInternalSelectedMarkupId] = useState<string | null>(null);
+  const [highlightPulseMarkupId, setHighlightPulseMarkupId] = useState<string | null>(null);
+
+  const selectedMarkupId =
+    externalSelectedMarkupId !== undefined ? externalSelectedMarkupId : internalSelectedMarkupId;
+  const setSelectedMarkupId = (id: string | null) => {
+    setInternalSelectedMarkupId(id);
+    onSelectMarkup?.(id);
+  };
   const [isDraggingMarkup, setIsDraggingMarkup] = useState(false);
   const [dragStartPos, setDragStartPos] = useState<Point>({ x: 0, y: 0 });
 
@@ -349,6 +363,86 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     window.addEventListener('keydown', handleCanvasKeyDown);
     return () => window.removeEventListener('keydown', handleCanvasKeyDown);
   }, [selectedMarkupId, onDeleteMarkup]);
+
+  // Handle double-click / focus request from markups schedule
+  useEffect(() => {
+    if (!focusMarkupTrigger?.id) return;
+    const target = markups.find((m) => m.id === focusMarkupTrigger.id);
+    if (!target || !target.points || target.points.length === 0) return;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    target.points.forEach((p) => {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, p.y);
+    });
+
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+
+    const container = containerRef.current;
+    if (container) {
+      const rect = container.getBoundingClientRect();
+      const targetZoom = Math.min(3.5, Math.max(zoom, 1.35));
+      setZoom(targetZoom);
+      setPan({
+        x: rect.width / 2 - cx * targetZoom,
+        y: rect.height / 2 - cy * targetZoom,
+      });
+    }
+
+    setHighlightPulseMarkupId(target.id);
+    const timer = setTimeout(() => {
+      setHighlightPulseMarkupId(null);
+    }, 3500);
+    return () => clearTimeout(timer);
+  }, [focusMarkupTrigger, markups]);
+
+  // When a markup is selected from schedule or externally, ensure it's visible on canvas
+  useEffect(() => {
+    if (!selectedMarkupId) return;
+    const target = markups.find((m) => m.id === selectedMarkupId);
+    if (!target || !target.points || target.points.length === 0) return;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    target.points.forEach((p) => {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, p.y);
+    });
+
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+
+    const container = containerRef.current;
+    if (container) {
+      const rect = container.getBoundingClientRect();
+      const screenX = pan.x + cx * zoom;
+      const screenY = pan.y + cy * zoom;
+      const margin = 70;
+      if (
+        screenX < margin ||
+        screenX > rect.width - margin ||
+        screenY < margin ||
+        screenY > rect.height - margin
+      ) {
+        setPan({
+          x: rect.width / 2 - cx * zoom,
+          y: rect.height / 2 - cy * zoom,
+        });
+      }
+    }
+  }, [selectedMarkupId, markups]);
 
   // Callout dragging mode: dragging the arrow tip, the text bubble, or the whole callout
   const [calloutDragMode, setCalloutDragMode] = useState<'arrow' | 'text' | 'body' | null>(null);
@@ -1065,11 +1159,53 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         }
 
         const pad = 8;
+
+        // High-visibility glowing pulse ring when focused from markups schedule
+        if (m.id === highlightPulseMarkupId) {
+          ctx.save();
+          ctx.strokeStyle = '#60a5fa';
+          ctx.lineWidth = 3;
+          ctx.shadowColor = '#3b82f6';
+          ctx.shadowBlur = 18;
+          ctx.strokeRect(minX - pad - 6, minY - pad - 6, maxX - minX + (pad + 6) * 2, maxY - minY + (pad + 6) * 2);
+          ctx.fillStyle = 'rgba(59, 130, 246, 0.15)';
+          ctx.fillRect(minX - pad - 6, minY - pad - 6, maxX - minX + (pad + 6) * 2, maxY - minY + (pad + 6) * 2);
+          ctx.restore();
+        }
+
         ctx.strokeStyle = '#3b82f6';
         ctx.setLineDash([4, 4]);
         ctx.lineWidth = 1.5;
         ctx.strokeRect(minX - pad, minY - pad, maxX - minX + pad * 2, maxY - minY + pad * 2);
         ctx.setLineDash([]);
+
+        // Floating identification badge above selected markup
+        ctx.save();
+        const badgeLabel = `${m.id}: ${m.name || m.formattedMeasurement || m.text || m.type.toUpperCase()}`;
+        ctx.font = 'bold 11px Inter, sans-serif';
+        const badgeTw = ctx.measureText(badgeLabel).width;
+        const badgeW = badgeTw + 16;
+        const badgeH = 22;
+        const badgeX = minX - pad;
+        const badgeY = Math.max(12, minY - pad - badgeH - 4);
+
+        ctx.fillStyle = '#1e3a8a';
+        ctx.strokeStyle = '#60a5fa';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        if (typeof (ctx as any).roundRect === 'function') {
+          (ctx as any).roundRect(badgeX, badgeY, badgeW, badgeH, 4);
+        } else {
+          ctx.rect(badgeX, badgeY, badgeW, badgeH);
+        }
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(badgeLabel, badgeX + 8, badgeY + badgeH / 2);
+        ctx.restore();
 
         // Small corner grip handles
         ctx.fillStyle = '#3b82f6';

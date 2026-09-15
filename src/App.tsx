@@ -294,6 +294,38 @@ export default function App() {
   const [redoStack, setRedoStack] = useState<MarkupItem[][]>([]);
   const [issues, setIssues] = useState<IssueItem[]>([]);
 
+  // Canvas & Schedule Synchronized Markup Selection & Sheet Navigation
+  const [selectedMarkupId, setSelectedMarkupId] = useState<string | null>(null);
+  const [focusMarkupTrigger, setFocusMarkupTrigger] = useState<{ id: string; timestamp: number } | null>(null);
+
+  const handleSelectMarkup = (id: string | null) => {
+    setSelectedMarkupId(id);
+  };
+
+  const handleFocusMarkup = (id: string, targetPageIndex?: number) => {
+    const target = markups.find((m) => m.id === id);
+    const markupPage = targetPageIndex !== undefined ? targetPageIndex : (target?.pageIndex ?? 0);
+
+    // If target markup is on a different sheet, automatically navigate to that sheet
+    if (currentDrawing && currentDrawing.sheetInfo.pageIndex !== markupPage) {
+      const targetSheet = sheets.find((s) => s.sheetInfo.pageIndex === markupPage) || sheets[markupPage];
+      if (targetSheet) {
+        setCurrentSheetId(targetSheet.id);
+        addToast(
+          'Switched Sheet',
+          `Navigated to ${targetSheet.sheetInfo.sheetNumber || `Page ${markupPage + 1}`} for markup ${id}.`,
+          'info'
+        );
+      }
+    }
+
+    // Select the markup for high-visibility bounding box and floating badge
+    setSelectedMarkupId(id);
+
+    // Trigger canvas auto-center and pulse animation
+    setFocusMarkupTrigger({ id, timestamp: Date.now() });
+  };
+
   // Per-Page Scale Calibrations
   const [pageCalibrations, setPageCalibrations] = useState<Record<number, PageScaleCalibration>>({
     0: {
@@ -521,6 +553,9 @@ export default function App() {
       );
     }
     setMarkups((prev) => prev.filter((m) => m.id !== id));
+    if (selectedMarkupId === id) {
+      setSelectedMarkupId(null);
+    }
   };
 
   // Open Clear Markups Modal with preset scope
@@ -532,6 +567,7 @@ export default function App() {
   // Clear Markups on Current Sheet or Entire Project
   const handleConfirmClearMarkups = (scope: 'current' | 'all') => {
     saveUndoSnapshot();
+    setSelectedMarkupId(null);
     if (scope === 'current') {
       const removedCount = pageMarkups.length;
       setMarkups((prev) => prev.filter((m) => m.pageIndex !== currentDrawingIndex));
@@ -1749,6 +1785,9 @@ export default function App() {
             activePolylineName={activePolylineName}
             activeCountCategory={activeCountCategory}
             countCategories={countCategories}
+            selectedMarkupId={selectedMarkupId}
+            onSelectMarkup={handleSelectMarkup}
+            focusMarkupTrigger={focusMarkupTrigger}
           />
         )}
 
@@ -1757,6 +1796,11 @@ export default function App() {
           isOpen={isRightSidebarOpen}
           onToggle={() => setIsRightSidebarOpen((o) => !o)}
           markups={pageMarkups}
+          allMarkups={markups}
+          availableSheets={sheets}
+          selectedMarkupId={selectedMarkupId}
+          onSelectMarkup={handleSelectMarkup}
+          onFocusMarkup={handleFocusMarkup}
           issues={issues}
           countCategories={countCategories}
           currentDrawing={currentDrawing || ALL_SAMPLE_DRAWINGS[0]}
@@ -1765,6 +1809,7 @@ export default function App() {
           onUpdateIssueStatus={handleUpdateIssueStatus}
           onUpdateCountCategory={handleUpdateCountCategory}
           onAddCountCategory={handleAddCountCategory}
+          onUpdateMarkup={handleUpdateMarkup}
         />
       </div>
 

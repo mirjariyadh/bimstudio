@@ -30,6 +30,9 @@ import {
   DollarSign,
   Edit2,
   Check,
+  Crosshair,
+  MousePointerClick,
+  Eye,
 } from 'lucide-react';
 import {
   DrawingSheetInfo,
@@ -346,6 +349,11 @@ interface RightSidebarProps {
   isOpen: boolean;
   onToggle: () => void;
   markups: MarkupItem[];
+  allMarkups?: MarkupItem[];
+  availableSheets?: SampleDrawing[];
+  selectedMarkupId?: string | null;
+  onSelectMarkup?: (id: string | null) => void;
+  onFocusMarkup?: (id: string, pageIndex: number) => void;
   issues: IssueItem[];
   countCategories: CountCategory[];
   currentDrawing: SampleDrawing;
@@ -361,6 +369,11 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   isOpen,
   onToggle,
   markups,
+  allMarkups,
+  availableSheets = [],
+  selectedMarkupId,
+  onSelectMarkup,
+  onFocusMarkup,
   issues,
   countCategories,
   currentDrawing,
@@ -372,6 +385,8 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   onUpdateMarkup,
 }) => {
   const [activeTab, setActiveTab] = useState<'ai' | 'markups' | 'issues' | 'takeoff' | 'ocr'>('ai');
+  const [markupScope, setMarkupScope] = useState<'all' | 'current'>('all');
+  const [markupSearchQuery, setMarkupSearchQuery] = useState('');
 
   // Polyline renaming state in takeoff tab
   const [editingPolylineId, setEditingPolylineId] = useState<string | null>(null);
@@ -699,77 +714,192 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
           </div>
         )}
 
-        {/* TAB 2: Markups List */}
-        {activeTab === 'markups' && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="font-semibold text-slate-400 text-[11px]">
-                MARKUP INVENTORY ({markups.length})
-              </span>
-              <button
-                onClick={() => {
-                  const csv = exportMeasurementsCsv(markups);
-                  const blob = new Blob([csv], { type: 'text/csv' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = 'Markups_List.csv';
-                  a.click();
-                }}
-                className="text-[10px] flex items-center gap-1 text-blue-400 hover:text-blue-300"
-              >
-                <Download className="w-3 h-3" />
-                <span>Export</span>
-              </button>
-            </div>
+        {/* TAB 2: Markups Schedule & Inventory */}
+        {activeTab === 'markups' && (() => {
+          const rawMarkupsList = markupScope === 'all' ? (allMarkups || markups) : markups;
+          const filteredMarkups = rawMarkupsList.filter((m) => {
+            if (!markupSearchQuery.trim()) return true;
+            const q = markupSearchQuery.toLowerCase();
+            return (
+              m.id.toLowerCase().includes(q) ||
+              m.type.toLowerCase().includes(q) ||
+              (m.formattedMeasurement || '').toLowerCase().includes(q) ||
+              (m.text || '').toLowerCase().includes(q) ||
+              (m.name || '').toLowerCase().includes(q) ||
+              (m.author || '').toLowerCase().includes(q) ||
+              (m.discipline || '').toLowerCase().includes(q)
+            );
+          });
 
-            {markups.length === 0 ? (
-              <div className="text-center py-8 text-slate-500 space-y-1">
-                <p>No markups placed on this drawing yet.</p>
-                <p className="text-[10px]">Use the top toolbar to draw measurements, clouds, or notes.</p>
+          return (
+            <div className="space-y-2.5">
+              {/* Header & Export */}
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-slate-300 text-[11px] tracking-wider uppercase flex items-center gap-1.5">
+                  <ListOrdered className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Markups Schedule ({filteredMarkups.length})</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const csv = exportMeasurementsCsv(rawMarkupsList);
+                    const blob = new Blob([csv], { type: 'text/csv' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `Markups_Schedule_${markupScope}.csv`;
+                    a.click();
+                  }}
+                  className="text-[10px] flex items-center gap-1 text-blue-400 hover:text-blue-300 bg-blue-950/40 border border-blue-800/40 px-2 py-0.5 rounded cursor-pointer transition-colors"
+                >
+                  <Download className="w-3 h-3" />
+                  <span>Export CSV</span>
+                </button>
               </div>
-            ) : (
-              <div className="space-y-2">
-                {markups.map((m) => (
-                  <div
-                    key={m.id}
-                    className="p-2 bg-slate-950 border border-slate-800 rounded-lg space-y-1 hover:border-slate-700 transition-colors"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: m.strokeColor }} />
-                        <span className="font-mono font-bold text-slate-100">{m.id}</span>
-                        <span className="text-[10px] uppercase font-semibold text-slate-400">
-                          {m.type}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteMarkup(m.id);
-                        }}
-                        title="Delete markup"
-                        className="text-slate-500 hover:text-red-400 p-1 rounded hover:bg-red-950/40 cursor-pointer transition-colors"
+
+              {/* Scope Switcher: All Sheets vs Current Sheet */}
+              <div className="grid grid-cols-2 gap-1 bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setMarkupScope('all')}
+                  className={`py-1 rounded font-medium transition-colors cursor-pointer text-center ${
+                    markupScope === 'all'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                  }`}
+                >
+                  All Sheets ({(allMarkups || markups).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMarkupScope('current')}
+                  className={`py-1 rounded font-medium transition-colors cursor-pointer text-center ${
+                    markupScope === 'current'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                  }`}
+                >
+                  Current Sheet ({markups.length})
+                </button>
+              </div>
+
+              {/* Interactive Help Hint */}
+              <div className="bg-slate-950/80 border border-slate-800/80 rounded-md px-2 py-1.5 text-[10px] text-slate-400 flex items-center gap-1.5">
+                <MousePointerClick className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                <span>
+                  <strong className="text-slate-200 font-semibold">Click</strong> to highlight on canvas &bull;{' '}
+                  <strong className="text-slate-200 font-semibold">Double-click</strong> to select in drawing & show sheet
+                </span>
+              </div>
+
+              {/* Search Filter Bar */}
+              <div className="relative">
+                <Search className="w-3 h-3 text-slate-500 absolute left-2 top-2" />
+                <input
+                  type="text"
+                  placeholder="Filter schedule by ID, type, measurement..."
+                  value={markupSearchQuery}
+                  onChange={(e) => setMarkupSearchQuery(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded pl-7 pr-2 py-1 text-[11px] text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Markups List Items */}
+              {filteredMarkups.length === 0 ? (
+                <div className="text-center py-8 text-slate-500 space-y-1">
+                  <p>No markups found {markupSearchQuery ? 'matching search' : 'in schedule'}.</p>
+                  <p className="text-[10px]">Use the drawing tools to place callouts, measurements, or polylines.</p>
+                </div>
+              ) : (
+                <div className="space-y-1.5 max-h-[440px] overflow-y-auto pr-0.5">
+                  {filteredMarkups.map((m) => {
+                    const isSelected = m.id === selectedMarkupId;
+                    const sheetObj = availableSheets.find((s) => s.sheetInfo.pageIndex === m.pageIndex) || availableSheets[m.pageIndex];
+                    const sheetBadge = sheetObj?.sheetInfo.sheetNumber || `Page ${m.pageIndex + 1}`;
+                    const isCurrentSheet = m.pageIndex === currentDrawing.sheetInfo.pageIndex;
+
+                    return (
+                      <div
+                        key={m.id}
+                        onClick={() => onSelectMarkup?.(m.id)}
+                        onDoubleClick={() => onFocusMarkup?.(m.id, m.pageIndex)}
+                        title="Click to highlight on canvas • Double-click to select in drawing and show sheet"
+                        className={`p-2.5 rounded-lg space-y-1.5 transition-all cursor-pointer select-none border ${
+                          isSelected
+                            ? 'bg-blue-950/80 border-blue-500 shadow-md ring-1 ring-blue-500/80'
+                            : 'bg-slate-950 border-slate-800 hover:border-slate-700 hover:bg-slate-900/60'
+                        }`}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span
+                              className="w-2.5 h-2.5 rounded-full shrink-0"
+                              style={{ backgroundColor: m.strokeColor }}
+                            />
+                            <span className={`font-mono font-bold text-xs ${isSelected ? 'text-blue-300' : 'text-slate-100'}`}>
+                              {m.id}
+                            </span>
+                            <span className="text-[10px] uppercase font-semibold text-slate-400 bg-slate-900 px-1 py-0.5 rounded border border-slate-800">
+                              {m.type}
+                            </span>
+                            <span
+                              title={`Located on ${sheetBadge}`}
+                              className={`text-[9px] font-mono px-1 py-0.5 rounded border ${
+                                isCurrentSheet
+                                  ? 'bg-emerald-950/50 text-emerald-300 border-emerald-800/40'
+                                  : 'bg-slate-900 text-slate-400 border-slate-800'
+                              }`}
+                            >
+                              {sheetBadge}
+                            </span>
+                          </div>
 
-                    <div className="text-slate-300 font-medium truncate">
-                      {m.formattedMeasurement || m.text || m.countCategory || 'Technical Markup'}
-                    </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onFocusMarkup?.(m.id, m.pageIndex);
+                              }}
+                              title="Focus in Drawing & Show Sheet"
+                              className="p-1 text-slate-400 hover:text-blue-400 rounded hover:bg-blue-950/40 cursor-pointer transition-colors"
+                            >
+                              <Crosshair className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDeleteMarkup(m.id);
+                              }}
+                              title="Delete markup"
+                              className="text-slate-500 hover:text-red-400 p-1 rounded hover:bg-red-950/40 cursor-pointer transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
 
-                    <div className="flex items-center justify-between text-[10px] text-slate-500">
-                      <span>By {m.author}</span>
-                      <span>{m.discipline}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+                        <div className={`font-medium truncate text-xs ${isSelected ? 'text-white' : 'text-slate-200'}`}>
+                          {m.formattedMeasurement || m.text || m.name || m.countCategory || 'Technical Drawing Markup'}
+                        </div>
+
+                        <div className="flex items-center justify-between text-[10px] text-slate-500 pt-0.5">
+                          <span>By {m.author} &bull; {m.discipline}</span>
+                          {isSelected && (
+                            <span className="text-blue-400 font-semibold text-[9px] flex items-center gap-0.5">
+                              <Check className="w-2.5 h-2.5" /> Selected
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* TAB 3: BIM Issue Tracking */}
         {activeTab === 'issues' && (
@@ -1189,10 +1319,18 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                     .map((p, idx) => {
                       const isEditing = editingPolylineId === p.id;
                       const displayName = p.name || p.text || `Polyline ${idx + 1}`;
+                      const isSelected = p.id === selectedMarkupId;
                       return (
                         <div
                           key={p.id}
-                          className="p-2 bg-slate-950 border border-slate-800 rounded-lg text-xs space-y-1 hover:border-slate-700 transition-colors"
+                          onClick={() => onSelectMarkup?.(p.id)}
+                          onDoubleClick={() => onFocusMarkup?.(p.id, p.pageIndex)}
+                          title="Click to highlight on canvas • Double-click to select in drawing and show sheet"
+                          className={`p-2 rounded-lg text-xs space-y-1 transition-all cursor-pointer border ${
+                            isSelected
+                              ? 'bg-blue-950/80 border-blue-500 shadow-md ring-1 ring-blue-500'
+                              : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                          }`}
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-1.5 min-w-0">

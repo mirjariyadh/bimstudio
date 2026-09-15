@@ -119,11 +119,21 @@ export const Header: React.FC<HeaderProps> = ({
   const bspFileInputRef = useRef<HTMLInputElement>(null);
   const [showFileMenu, setShowFileMenu] = useState(false);
   const fileMenuRef = useRef<HTMLDivElement>(null);
+  const [showSaveProjectMenu, setShowSaveProjectMenu] = useState(false);
+  const saveProjectMenuRef = useRef<HTMLDivElement>(null);
+  const [showSavePdfMenu, setShowSavePdfMenu] = useState(false);
+  const savePdfMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (fileMenuRef.current && !fileMenuRef.current.contains(e.target as Node)) {
         setShowFileMenu(false);
+      }
+      if (saveProjectMenuRef.current && !saveProjectMenuRef.current.contains(e.target as Node)) {
+        setShowSaveProjectMenu(false);
+      }
+      if (savePdfMenuRef.current && !savePdfMenuRef.current.contains(e.target as Node)) {
+        setShowSavePdfMenu(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -580,36 +590,124 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
 
           {/* Primary Save Project (.bsp) Button Group */}
-          <div className="flex items-center">
-            <button
-              id="save-project-header-button"
-              onClick={() => onSaveProject(false)}
-              disabled={isSavingProject || availableSheets.length === 0}
-              title={
-                projectFileName
-                  ? `Save editable project to "${projectFileName}" (Ctrl+S)`
-                  : 'Save Project (.bsp) - Choose name and preserve all markups (Ctrl+S)'
-              }
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-l-lg transition-all shadow-xs cursor-pointer disabled:opacity-50"
-            >
-              {isSavingProject ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-200" />
-              ) : (
-                <Save className="w-3.5 h-3.5 text-blue-100" />
-              )}
-              <span className="inline">
-                {isSavingProject ? 'Saving...' : 'Save Project'}
-              </span>
-            </button>
-            <button
-              id="save-project-as-header-button"
-              onClick={() => onSaveProject(true)}
-              disabled={isSavingProject || availableSheets.length === 0}
-              title="Save Project As... (Name file & choose destination)"
-              className="px-1.5 py-1.5 text-xs font-semibold bg-blue-700 hover:bg-blue-600 text-blue-100 border-l border-blue-500/40 rounded-r-lg transition-all shadow-xs cursor-pointer disabled:opacity-50"
-            >
-              <ChevronDown className="w-3 h-3" />
-            </button>
+          <div className="relative" ref={saveProjectMenuRef}>
+            <div className="flex items-stretch rounded-lg shadow-xs">
+              <button
+                id="save-project-header-button"
+                onClick={() => onSaveProject(false)}
+                disabled={isSavingProject || availableSheets.length === 0}
+                title={
+                  projectFileName
+                    ? `Save editable project to "${projectFileName}" (Ctrl+S)`
+                    : 'Save Project (.bsp) - Choose name and preserve all markups (Ctrl+S)'
+                }
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-l-lg transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isSavingProject ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-200" />
+                ) : (
+                  <Save className="w-3.5 h-3.5 text-blue-100" />
+                )}
+                <span className="inline">
+                  {isSavingProject ? 'Saving...' : 'Save Project'}
+                </span>
+              </button>
+              <button
+                id="save-project-as-header-button"
+                onClick={() => setShowSaveProjectMenu((prev) => !prev)}
+                disabled={isSavingProject || availableSheets.length === 0}
+                title="Save Project Options & Save As... (Click to open menu)"
+                className="flex items-center justify-center px-2 py-1.5 text-xs font-semibold bg-blue-700 hover:bg-blue-600 text-blue-100 border-l border-blue-500/40 rounded-r-lg transition-all cursor-pointer disabled:opacity-50"
+              >
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${showSaveProjectMenu ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+
+            {/* Save Project Dropdown Menu: Width is generously sized (w-72 / 288px), significantly wider than its body */}
+            {showSaveProjectMenu && (
+              <div className="absolute top-full right-0 mt-1.5 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1.5 z-50 text-xs backdrop-blur-md divide-y divide-slate-800 animate-in fade-in zoom-in-95 duration-100">
+                <div className="px-3 py-2">
+                  <div className="text-[10px] uppercase font-bold text-blue-400 tracking-wider">
+                    BIM Project File (.bsp)
+                  </div>
+                  <div className="text-[11px] text-slate-300 truncate mt-0.5 font-mono">
+                    {projectFileName ? projectFileName : 'Unsaved Project'}
+                  </div>
+                </div>
+
+                <div className="py-1">
+                  <button
+                    id="menu-quick-save-project"
+                    type="button"
+                    onClick={() => {
+                      setShowSaveProjectMenu(false);
+                      onSaveProject(false);
+                    }}
+                    disabled={availableSheets.length === 0}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-800 flex items-center justify-between text-slate-200 cursor-pointer group disabled:opacity-50"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Save className="w-4 h-4 text-blue-400 shrink-0" />
+                      <div>
+                        <div className="font-semibold text-white group-hover:text-blue-300">
+                          Save Project
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          {projectFileName ? `Quick save to "${projectFileName}"` : 'Save project file to disk'}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-mono">Ctrl+S</span>
+                  </button>
+
+                  <button
+                    id="menu-save-project-as-option"
+                    type="button"
+                    onClick={() => {
+                      setShowSaveProjectMenu(false);
+                      onSaveProject(true);
+                    }}
+                    disabled={availableSheets.length === 0}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-800 flex items-center justify-between text-slate-200 cursor-pointer group disabled:opacity-50"
+                  >
+                    <div className="flex items-center gap-2">
+                      <HardDrive className="w-4 h-4 text-blue-400 shrink-0" />
+                      <div>
+                        <div className="font-semibold text-white group-hover:text-blue-300">
+                          Save Project As...
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          Choose custom filename & location
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-mono">.bsp</span>
+                  </button>
+                </div>
+
+                <div className="py-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSaveProjectMenu(false);
+                      onOpenExportModal();
+                    }}
+                    disabled={availableSheets.length === 0}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-800 flex items-center gap-2 text-slate-300 cursor-pointer group disabled:opacity-50"
+                  >
+                    <Download className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <div>
+                      <div className="font-medium text-white group-hover:text-emerald-300">
+                        Export Annotated PDF Package...
+                      </div>
+                      <div className="text-[10px] text-slate-400">
+                        Save all drawings with baked vector markups
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Primary Open PDF Button */}
@@ -624,46 +722,109 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
 
           {/* Dedicated Save PDF Button Group */}
-          <div className="hidden sm:flex items-center">
-            <button
-              id="save-pdf-source-button"
-              onClick={() => onSaveToSource(false)}
-              disabled={isSavingToSource || availableSheets.length === 0}
-              title={
-                hasSourceHandle
-                  ? `Save PDF directly back to "${sourceFileName}" on disk`
-                  : sourceFileName
-                  ? `Save PDF back to "${sourceFileName}"`
-                  : 'Save PDF file'
-              }
-              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-l-lg transition-all shadow-xs cursor-pointer disabled:opacity-50 ${
-                hasSourceHandle
-                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/40'
-                  : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 border-r-0'
-              }`}
-            >
-              {isSavingToSource ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-300" />
-              ) : (
-                <HardDrive className={`w-3.5 h-3.5 ${hasSourceHandle ? 'text-white' : 'text-emerald-400'}`} />
-              )}
-              <span className="inline">
-                {isSavingToSource ? 'Saving...' : 'Save PDF'}
-              </span>
-            </button>
-            <button
-              id="save-pdf-as-header-button"
-              onClick={() => onSaveToSource(true)}
-              disabled={isSavingToSource || availableSheets.length === 0}
-              title="Save As New PDF... (Name PDF file & choose scope)"
-              className={`px-1.5 py-1.5 text-xs font-semibold rounded-r-lg transition-all shadow-xs cursor-pointer disabled:opacity-50 ${
-                hasSourceHandle
-                  ? 'bg-emerald-700 hover:bg-emerald-600 text-emerald-100 border-l border-emerald-500/40'
-                  : 'bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700'
-              }`}
-            >
-              <ChevronDown className="w-3 h-3" />
-            </button>
+          <div className="hidden sm:relative sm:block" ref={savePdfMenuRef}>
+            <div className="flex items-stretch rounded-lg shadow-xs">
+              <button
+                id="save-pdf-source-button"
+                onClick={() => onSaveToSource(false)}
+                disabled={isSavingToSource || availableSheets.length === 0}
+                title={
+                  hasSourceHandle
+                    ? `Save PDF directly back to "${sourceFileName}" on disk`
+                    : sourceFileName
+                    ? `Save PDF back to "${sourceFileName}"`
+                    : 'Save PDF file'
+                }
+                className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-l-lg transition-all cursor-pointer disabled:opacity-50 ${
+                  hasSourceHandle
+                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/40'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 border-r-0'
+                }`}
+              >
+                {isSavingToSource ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-300" />
+                ) : (
+                  <HardDrive className={`w-3.5 h-3.5 ${hasSourceHandle ? 'text-white' : 'text-emerald-400'}`} />
+                )}
+                <span className="inline">
+                  {isSavingToSource ? 'Saving...' : 'Save PDF'}
+                </span>
+              </button>
+              <button
+                id="save-pdf-as-header-button"
+                onClick={() => setShowSavePdfMenu((prev) => !prev)}
+                disabled={isSavingToSource || availableSheets.length === 0}
+                title="Save PDF Options & Save As..."
+                className={`flex items-center justify-center px-2 py-1.5 text-xs font-semibold rounded-r-lg transition-all cursor-pointer disabled:opacity-50 ${
+                  hasSourceHandle
+                    ? 'bg-emerald-700 hover:bg-emerald-600 text-emerald-100 border-l border-emerald-500/40'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700'
+                }`}
+              >
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${showSavePdfMenu ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+
+            {showSavePdfMenu && (
+              <div className="absolute top-full right-0 mt-1.5 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1.5 z-50 text-xs backdrop-blur-md divide-y divide-slate-800 animate-in fade-in zoom-in-95 duration-100">
+                <div className="px-3 py-2">
+                  <div className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider">
+                    PDF File Options
+                  </div>
+                  <div className="text-[11px] text-slate-300 truncate mt-0.5 font-mono">
+                    {sourceFileName ? sourceFileName : 'Current PDF'}
+                  </div>
+                </div>
+
+                <div className="py-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSavePdfMenu(false);
+                      onSaveToSource(false);
+                    }}
+                    disabled={availableSheets.length === 0}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-800 flex items-center justify-between text-slate-200 cursor-pointer group disabled:opacity-50"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Save className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <div>
+                        <div className="font-semibold text-white group-hover:text-emerald-300">
+                          Save PDF
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          {hasSourceHandle ? 'Overwrite source file on disk' : 'Save changes to PDF file'}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-mono">Ctrl+Shift+S</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSavePdfMenu(false);
+                      onSaveToSource(true);
+                    }}
+                    disabled={availableSheets.length === 0}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-800 flex items-center justify-between text-slate-200 cursor-pointer group disabled:opacity-50"
+                  >
+                    <div className="flex items-center gap-2">
+                      <HardDrive className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <div>
+                        <div className="font-semibold text-white group-hover:text-emerald-300">
+                          Save As New PDF...
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          Export under a new name or location
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-mono">.pdf</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <FileText className="w-4 h-4 text-slate-400 shrink-0 ml-1" />
