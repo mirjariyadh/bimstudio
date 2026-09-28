@@ -12,6 +12,7 @@ import {
   Loader2,
   FileCheck,
   HardDrive,
+  FileImage,
 } from 'lucide-react';
 
 interface OpenPdfModalProps {
@@ -38,7 +39,8 @@ export const OpenPdfModal: React.FC<OpenPdfModalProps> = ({
   if (!isOpen || !file) return null;
 
   const fileSizeMb = (file.size / (1024 * 1024)).toFixed(2);
-  const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|webp|svg|bmp)$/i.test(file.name);
+  const isTiff = /\.(tiff|tif)$/i.test(file.name) || file.type === 'image/tiff';
+  const isImage = !isTiff && (file.type.startsWith('image/') || /\.(png|jpe?g|webp|svg|bmp)$/i.test(file.name));
 
   return (
     <div
@@ -52,15 +54,28 @@ export const OpenPdfModal: React.FC<OpenPdfModalProps> = ({
         {/* Modal Header */}
         <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-950/60">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
-              <FileText className="w-5 h-5" />
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+              isTiff
+                ? 'bg-sky-500/20 border border-sky-400/30 text-sky-400'
+                : 'bg-blue-600/20 border border-blue-500/30 text-blue-400'
+            }`}>
+              {isTiff ? <FileImage className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white tracking-wide">
-                {isImage ? 'Open Drawing Image' : 'Open PDF Drawing Set'}
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-white tracking-wide">
+                  {isTiff ? 'Open Large TIFF Drawing' : isImage ? 'Open Drawing Image' : 'Open PDF Drawing Set'}
+                </h3>
+                {isTiff && (
+                  <span className="text-[10px] uppercase font-bold px-2 py-0.2 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                    TIFF Engine
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-slate-400">
-                Choose how to import this file into your workspace
+                {isTiff
+                  ? 'Multi-page & deep zoom support with GeoTIFF / UTIF decoding'
+                  : 'Choose how to import this file into your workspace'}
               </p>
             </div>
           </div>
@@ -89,9 +104,14 @@ export const OpenPdfModal: React.FC<OpenPdfModalProps> = ({
         {isProcessing ? (
           <div className="p-8 text-center space-y-3">
             <Loader2 className="w-8 h-8 text-blue-400 animate-spin mx-auto" />
-            <div className="text-sm font-semibold text-white">Loading & Rendering Pages...</div>
+            <div className="text-sm font-semibold text-white">
+              {isTiff ? 'Decoding & Caching TIFF Rasters...' : 'Loading & Rendering Pages...'}
+            </div>
             <p className="text-xs text-slate-400">
-              {progressText || 'Extracting vector sheets, high-DPI viewports, and drawing metadata.'}
+              {progressText ||
+                (isTiff
+                  ? 'Parsing IFD tags, decompressing image strips, and configuring deep-zoom cache.'
+                  : 'Extracting vector sheets, high-DPI viewports, and drawing metadata.')}
             </p>
           </div>
         ) : (

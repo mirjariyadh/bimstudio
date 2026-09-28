@@ -76,6 +76,7 @@ interface HeaderProps {
   onClearAllMarkups?: () => void;
   currentSheetMarkupCount?: number;
   totalMarkupCount?: number;
+  onLoadSampleTiff?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -114,6 +115,7 @@ export const Header: React.FC<HeaderProps> = ({
   onClearAllMarkups,
   currentSheetMarkupCount = 0,
   totalMarkupCount = 0,
+  onLoadSampleTiff,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bspFileInputRef = useRef<HTMLInputElement>(null);
@@ -306,10 +308,11 @@ export const Header: React.FC<HeaderProps> = ({
                   </button>
                 </div>
 
-                {/* 2. PDF Document Section */}
+                {/* 2. PDF & TIFF Document Section */}
                 <div className="py-1">
-                  <div className="px-3 py-1 text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                    PDF Document
+                  <div className="px-3 py-1 text-[10px] uppercase font-bold text-sky-400 tracking-wider flex items-center justify-between">
+                    <span>PDF &amp; TIFF Drawing</span>
+                    <span className="font-mono text-[9px] px-1 py-0.2 rounded bg-sky-500/20 text-sky-300 font-semibold">.pdf / .tiff</span>
                   </div>
                   <button
                     id="menu-open-pdf"
@@ -320,9 +323,27 @@ export const Header: React.FC<HeaderProps> = ({
                     }}
                     className="w-full text-left px-3 py-1.5 hover:bg-slate-800 flex items-center gap-2 text-slate-200 cursor-pointer"
                   >
-                    <Upload className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Open / Import PDF...</span>
+                    <Upload className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Open PDF / TIFF Drawing...</span>
                   </button>
+
+                  {onLoadSampleTiff && (
+                    <button
+                      id="menu-load-sample-tiff"
+                      type="button"
+                      onClick={() => {
+                        setShowFileMenu(false);
+                        onLoadSampleTiff();
+                      }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-slate-800 flex items-center gap-2 text-sky-300 hover:text-white cursor-pointer"
+                    >
+                      <Layers className="w-3.5 h-3.5 text-sky-400" />
+                      <div>
+                        <div className="font-medium">Load Sample Large TIFF</div>
+                        <div className="text-[10px] text-slate-400">ARCH-E (36"×24") 300 DPI CAD Blueprint</div>
+                      </div>
+                    </button>
+                  )}
 
                   <button
                     id="menu-save-pdf"
@@ -710,15 +731,15 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </div>
 
-          {/* Primary Open PDF Button */}
+          {/* Primary Open PDF / TIFF Button */}
           <button
             id="open-pdf-header-button"
             onClick={handleOpenClick}
-            title="Open architectural PDF or drawing from computer"
+            title="Open architectural PDF, large TIFF scan, or CAD drawing from computer"
             className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium rounded-lg transition-colors shadow-xs cursor-pointer"
           >
             <Upload className="w-3.5 h-3.5 text-slate-400" />
-            <span>Open PDF</span>
+            <span>Open Drawing</span>
           </button>
 
           {/* Dedicated Save PDF Button Group */}
@@ -846,12 +867,12 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           )}
 
-          {/* Hidden File Input for PDF / Image */}
+          {/* Hidden File Input for PDF / TIFF / Image */}
           <input
             type="file"
             ref={fileInputRef}
             onChange={handleFileChange}
-            accept=".pdf,image/png,image/jpeg,image/webp,image/svg+xml"
+            accept=".pdf,.tiff,.tif,image/tiff,image/x-tiff,image/png,image/jpeg,image/webp,image/svg+xml"
             className="hidden"
           />
 

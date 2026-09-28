@@ -252,6 +252,11 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                         {s.sheetInfo.sheetNumber}
                       </span>
                       <div className="flex items-center gap-1.5">
+                        {s.isTiff && (
+                          <span className="text-[9px] uppercase font-bold px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30 font-mono">
+                            TIFF
+                          </span>
+                        )}
                         <span className="text-[10px] uppercase font-semibold px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700">
                           {s.sheetInfo.revision}
                         </span>

@@ -52,9 +52,10 @@ export async function pickPdfWithNativeHandle(): Promise<OpenFileResult | null> 
       excludeAcceptAllOption: false,
       types: [
         {
-          description: 'Architectural PDF Documents & Drawings',
+          description: 'Architectural PDF, TIFF & CAD Drawings',
           accept: {
             'application/pdf': ['.pdf'],
+            'image/tiff': ['.tiff', '.tif'],
             'image/png': ['.png'],
             'image/jpeg': ['.jpg', '.jpeg'],
             'image/webp': ['.webp'],

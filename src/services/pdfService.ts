@@ -7,6 +7,7 @@ import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 import { MarkupItem, Point } from '../types';
 import { SampleDrawing } from './sampleDrawings';
+import { isTiffFile, loadTiffFilesAsSheets } from './tiffService';
 
 // Configure pdfjs worker if available in browser
 if (typeof window !== 'undefined' && pdfjsLib.GlobalWorkerOptions) {
@@ -64,6 +65,11 @@ export async function loadDrawingFilesAsSheets(
   basePageIndex = 0,
   onProgress?: (current: number, total: number, message?: string, percent?: number) => void
 ): Promise<SampleDrawing[]> {
+  // Check for TIFF format (single or multi-page, BigTIFF, GeoTIFF, or scanned blueprint)
+  if (isTiffFile(file)) {
+    return loadTiffFilesAsSheets(file, basePageIndex, onProgress);
+  }
+
   const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|webp|svg|bmp)$/i.test(file.name);
 
   if (isImage) {

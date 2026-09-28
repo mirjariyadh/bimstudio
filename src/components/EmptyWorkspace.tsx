@@ -15,17 +15,20 @@ import {
   CheckCircle2,
   Sparkles,
   ArrowRight,
+  FileImage,
 } from 'lucide-react';
 import { pickPdfWithNativeHandle } from '../services/fileSystemSyncService';
 
 interface EmptyWorkspaceProps {
   onOpenPdf: (file: File, handle?: FileSystemFileHandle) => void;
   onRestoreSamples: () => void;
+  onLoadSampleTiff?: () => void;
 }
 
 export const EmptyWorkspace: React.FC<EmptyWorkspaceProps> = ({
   onOpenPdf,
   onRestoreSamples,
+  onLoadSampleTiff,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -96,29 +99,29 @@ export const EmptyWorkspace: React.FC<EmptyWorkspaceProps> = ({
       <input
         ref={fileInputRef}
         type="file"
-        accept="application/pdf,image/png,image/jpeg,image/webp,image/svg+xml"
+        accept="application/pdf,.tiff,.tif,image/tiff,image/png,image/jpeg,image/webp,image/svg+xml"
         onChange={handleFileChange}
         className="hidden"
       />
 
-      <div className="max-w-xl w-full text-center space-y-6">
+      <div className="max-w-2xl w-full text-center space-y-6">
         {/* Central Blueprint Icon badge */}
         <div className="relative inline-block">
           <div className="w-20 h-20 mx-auto rounded-3xl bg-blue-600/15 border border-blue-500/30 flex items-center justify-center text-blue-400 shadow-xl shadow-blue-500/5">
             <FileUp className="w-10 h-10" />
           </div>
-          <span className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 border border-slate-700 text-blue-400">
-            <Compass className="w-3.5 h-3.5" />
+          <span className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 border border-slate-700 text-sky-400">
+            <FileImage className="w-3.5 h-3.5" />
           </span>
         </div>
 
         {/* Heading */}
         <div className="space-y-2">
           <h2 className="text-2xl font-bold tracking-tight text-white">
-            Workspace Ready for Drawings
+            Workspace Ready for PDF &amp; Large TIFF Drawings
           </h2>
-          <p className="text-sm text-slate-400 max-w-md mx-auto leading-relaxed">
-            Drag and drop your architectural PDF, CAD export, or drawing image here, or choose an option to begin.
+          <p className="text-sm text-slate-400 max-w-lg mx-auto leading-relaxed">
+            Drag and drop your architectural PDF, large-format <strong className="text-sky-400 font-semibold">.tiff/.tif plan scan</strong>, or CAD drawing here, or choose an option to begin.
           </p>
         </div>
 
@@ -130,28 +133,49 @@ export const EmptyWorkspace: React.FC<EmptyWorkspaceProps> = ({
             className="w-full sm:w-auto px-6 py-3 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 font-semibold text-white rounded-xl shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
           >
             <FolderPlus className="w-4 h-4" />
-            <span>Open PDF Document</span>
+            <span>Open PDF or TIFF File</span>
           </button>
+
+          {onLoadSampleTiff && (
+            <button
+              type="button"
+              onClick={onLoadSampleTiff}
+              className="w-full sm:w-auto px-6 py-3 bg-sky-950/60 hover:bg-sky-900/60 border border-sky-500/40 font-semibold text-sky-300 hover:text-white rounded-xl shadow-lg shadow-sky-950/40 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
+            >
+              <FileImage className="w-4 h-4 text-sky-400" />
+              <span>Sample Large TIFF (ARCH-E 300 DPI)</span>
+            </button>
+          )}
 
           <button
             type="button"
             onClick={onRestoreSamples}
-            className="w-full sm:w-auto px-6 py-3 bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-slate-600 font-medium text-slate-200 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
+            className="w-full sm:w-auto px-5 py-3 bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-slate-600 font-medium text-slate-300 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
           >
             <RefreshCw className="w-4 h-4 text-slate-400" />
-            <span>Load Sample BIM Project</span>
+            <span>Demo Project</span>
           </button>
         </div>
 
         {/* Supported Formats & Capabilities Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-6 border-t border-slate-900 text-left">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-6 border-t border-slate-900 text-left">
+          <div className="p-3.5 rounded-xl bg-slate-900/60 border border-sky-500/30 bg-sky-950/10">
+            <div className="flex items-center gap-2 text-xs font-semibold text-sky-300 mb-1">
+              <FileImage className="w-3.5 h-3.5 text-sky-400" />
+              <span>Large TIFF Viewer</span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-normal">
+              High-DPI 300+ DPI deep zoom, BigTIFF 64-bit, multi-page sets, GeoTIFF tags, and LZW/CCITT decompression.
+            </p>
+          </div>
+
           <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80">
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-200 mb-1">
               <FileText className="w-3.5 h-3.5 text-blue-400" />
               <span>Multi-Page PDF</span>
             </div>
             <p className="text-[11px] text-slate-400 leading-normal">
-              High-DPI 2x vector rendering for crisp line weights and sheet index discovery.
+              Vector PDF linework preservation with sheet indexing and full resolution export.
             </p>
           </div>
 
@@ -161,17 +185,17 @@ export const EmptyWorkspace: React.FC<EmptyWorkspaceProps> = ({
               <span>Scale Calibration</span>
             </div>
             <p className="text-[11px] text-slate-400 leading-normal">
-              Calibrate architectural scales (e.g. 1/4&quot;=1&apos;-0&quot;, 1:100) with metric &amp; imperial takeoffs.
+              Calibrate architectural scales (e.g. 1/4&quot;=1&apos;-0&quot;, 1:100, or native DPI) for live takeoffs.
             </p>
           </div>
 
           <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80">
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-200 mb-1">
               <Layers className="w-3.5 h-3.5 text-amber-400" />
-              <span>Revisions &amp; Compare</span>
+              <span>Revisions &amp; Markups</span>
             </div>
             <p className="text-[11px] text-slate-400 leading-normal">
-              Organize pages, delete unwanted sheets, add clouds, and compare drawing revisions.
+              Add revision clouds, dimensions, callouts, and stamps on top of large TIFF scans.
             </p>
           </div>
         </div>

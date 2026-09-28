@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { DrawingSheetInfo, RevisionHistoryItem } from '../types';
+import { DrawingSheetInfo, RevisionHistoryItem, TiffMetadata } from '../types';
 
 export interface SampleDrawing {
   id: string;
@@ -27,6 +27,13 @@ export interface SampleDrawing {
     targetScale: number,
     onTaskCreated?: (task: any) => void
   ) => Promise<{ width: number; height: number } | null>;
+  // TIFF specific properties
+  isTiff?: boolean;
+  tiffMetadata?: TiffMetadata;
+  tiffPagesCount?: number;
+  tiffPageIndex?: number;
+  tiffEngine?: 'geotiff' | 'utif';
+  tiffImageSource?: any;
 }
 
 // Drawing helper routines

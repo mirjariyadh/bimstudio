@@ -32,6 +32,7 @@ interface CommandPaletteProps {
   onOpenAi: () => void;
   onExport: () => void;
   onSave?: () => void;
+  onLoadSampleTiff?: () => void;
 }
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({
@@ -45,6 +46,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onOpenAi,
   onExport,
   onSave,
+  onLoadSampleTiff,
 }) => {
   const [query, setQuery] = useState('');
 
@@ -74,6 +76,20 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             icon: <Save className="w-4 h-4 text-emerald-400" />,
             action: () => {
               onSave();
+              onClose();
+            },
+          },
+        ]
+      : []),
+    ...(onLoadSampleTiff
+      ? [
+          {
+            id: 'load-sample-tiff',
+            title: 'Load Sample Large TIFF (ARCH-E 36x24 300 DPI Blueprint)',
+            category: 'File & Project',
+            icon: <Layers className="w-4 h-4 text-sky-400" />,
+            action: () => {
+              onLoadSampleTiff();
               onClose();
             },
           },

@@ -15,6 +15,8 @@ import {
   X,
   Compass,
   Edit3,
+  Info,
+  FileImage,
 } from 'lucide-react';
 import {
   ToolType,
@@ -34,6 +36,7 @@ import {
   formatArea,
 } from '../services/calibrationService';
 import { SampleDrawing } from '../services/sampleDrawings';
+import { TiffMetadataModal } from './TiffMetadataModal';
 
 // Robust hit tester for selecting markups on canvas
 const isPointNearMarkup = (m: MarkupItem, pos: Point, zoom: number): boolean => {
@@ -187,6 +190,8 @@ interface DrawingCanvasProps {
   selectedMarkupId?: string | null;
   onSelectMarkup?: (id: string | null) => void;
   focusMarkupTrigger?: { id: string; timestamp: number } | null;
+  onApplyDpiScale?: (dpi: number) => void;
+  onSelectSheet?: (id: string) => void;
 }
 
 export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
@@ -213,6 +218,8 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   selectedMarkupId: externalSelectedMarkupId,
   onSelectMarkup,
   focusMarkupTrigger,
+  onApplyDpiScale,
+  onSelectSheet,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const baseCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -226,6 +233,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   const [rotation, setRotation] = useState<number>(0);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [isShiftPressed, setIsShiftPressed] = useState(false);
+  const [showTiffMetadataModal, setShowTiffMetadataModal] = useState(false);
 
   // Active Drawing Interactions
   const [currentPoints, setCurrentPoints] = useState<Point[]>([]);
@@ -2064,6 +2072,19 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     });
   };
 
+  const handleZoom100 = useCallback(() => {
+    const container = containerRef.current;
+    if (!container || !currentDrawing) return;
+    const rect = container.getBoundingClientRect();
+    const w = currentDrawing.width || 1400;
+    const h = currentDrawing.height || 950;
+    setZoom(1.0);
+    setPan({
+      x: (rect.width - w) / 2,
+      y: (rect.height - h) / 2,
+    });
+  }, [currentDrawing]);
+
   // Save edited markup text / polyline name
   const handleSaveEditedText = () => {
     if (editingMarkupId) {
@@ -2333,6 +2354,66 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             )}
           </div>
         )}
+
+        {/* Floating TIFF Viewer HUD Bar */}
+        {currentDrawing.isTiff && (
+          <div
+            id="tiff-viewer-hud-bar"
+            className="absolute top-4 right-4 z-20 flex items-center gap-2 bg-slate-900/90 backdrop-blur-md border border-sky-500/40 px-3 py-1.5 rounded-xl shadow-2xl text-xs select-none"
+          >
+            <div className="flex items-center gap-1.5 pr-2 border-r border-slate-700">
+              <div className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
+              <span className="font-bold text-sky-300 font-mono">TIFF</span>
+              <span className="text-[11px] text-slate-300 font-mono">
+                {currentDrawing.width.toLocaleString()}×{currentDrawing.height.toLocaleString()}
+              </span>
+              {currentDrawing.tiffMetadata?.xResolution && (
+                <span className="text-[10px] text-slate-400 font-mono">
+                  @{currentDrawing.tiffMetadata.xResolution} DPI
+                </span>
+              )}
+            </div>
+
+            {/* Multi-page controls if applicable */}
+            {currentDrawing.tiffPagesCount && currentDrawing.tiffPagesCount > 1 && (
+              <div className="flex items-center gap-1 pr-2 border-r border-slate-700">
+                <span className="text-[10px] text-slate-400">Page</span>
+                <span className="font-semibold text-white">
+                  {(currentDrawing.tiffPageIndex ?? 0) + 1} / {currentDrawing.tiffPagesCount}
+                </span>
+              </div>
+            )}
+
+            {/* Quick Viewport Shortcuts */}
+            <button
+              type="button"
+              onClick={handleZoom100}
+              title="1:1 Native Pixel View (100% Zoom) - View actual unscaled TIFF pixels"
+              className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-mono text-[10px] font-semibold transition-colors cursor-pointer"
+            >
+              1:1 (100%)
+            </button>
+
+            <button
+              type="button"
+              onClick={handleFitPage}
+              title="Fit Drawing to Window"
+              className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-[10px] font-medium transition-colors cursor-pointer"
+            >
+              Fit
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowTiffMetadataModal(true)}
+              title="Inspect TIFF EXIF / GeoTIFF Tags & Metadata"
+              className="flex items-center gap-1 px-2 py-0.5 rounded bg-sky-600/30 hover:bg-sky-600/50 text-sky-300 hover:text-white border border-sky-500/40 text-[10px] font-semibold transition-colors cursor-pointer"
+            >
+              <Info className="w-3 h-3" />
+              <span>Inspector</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Professional Technical Status Bar */}
@@ -2393,6 +2474,21 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
         {/* Right: Zoom & Navigation Controls */}
         <div className="flex items-center gap-2">
+          {currentDrawing.isTiff && (
+            <button
+              type="button"
+              onClick={() => setShowTiffMetadataModal(true)}
+              title="Inspect TIFF tags, EXIF headers, resolution, and color model (Click for details)"
+              className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-mono border bg-sky-950/60 border-sky-500/40 text-sky-300 hover:bg-sky-900/60 hover:text-white cursor-pointer transition-all"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+              <span>
+                TIFF {currentDrawing.width}×{currentDrawing.height}
+                {currentDrawing.tiffMetadata?.xResolution ? ` @ ${currentDrawing.tiffMetadata.xResolution} DPI` : ''}
+              </span>
+            </button>
+          )}
+
           {currentDrawing.isVectorPdf && (
             <div
               title="Vector engine active: Linework rendered directly in browser from local file"
@@ -2471,6 +2567,20 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         </div>
       </div>
     </footer>
+
+    {/* TIFF Metadata Inspector Modal */}
+    {showTiffMetadataModal && currentDrawing.tiffMetadata && (
+      <TiffMetadataModal
+        isOpen={showTiffMetadataModal}
+        onClose={() => setShowTiffMetadataModal(false)}
+        metadata={currentDrawing.tiffMetadata}
+        sheetTitle={currentDrawing.sheetInfo.title}
+        sheetNumber={currentDrawing.sheetInfo.sheetNumber}
+        onApplyDpiScale={onApplyDpiScale}
+        onZoom100={handleZoom100}
+        onFitScreen={handleFitPage}
+      />
+    )}
   </div>
 );
 };

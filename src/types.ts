@@ -338,3 +338,40 @@ export interface SaveFileModalOptions {
   scope?: 'current' | 'all';
 }
 
+export interface TiffGeoBoundingBox {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+}
+
+export interface TiffMetadata {
+  width: number;
+  height: number;
+  pagesCount: number;
+  pageIndex: number;
+  bitsPerSample?: number | number[];
+  samplesPerPixel?: number;
+  photometricInterpretation?: string;
+  compression?: string;
+  xResolution?: number;
+  yResolution?: number;
+  resolutionUnit?: string; // 'inch' | 'cm' | 'unitless'
+  physicalWidthInches?: number;
+  physicalHeightInches?: number;
+  planarConfiguration?: string;
+  software?: string;
+  dateTime?: string;
+  documentName?: string;
+  pageName?: string;
+  imageDescription?: string;
+  artist?: string;
+  copyright?: string;
+  isBigTiff?: boolean;
+  isGeoTiff?: boolean;
+  geoBoundingBox?: TiffGeoBoundingBox;
+  geoCSType?: string;
+  fileSizeBytes?: number;
+  engineUsed: 'geotiff' | 'utif';
+}
+

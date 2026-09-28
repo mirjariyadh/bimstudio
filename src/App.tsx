@@ -39,6 +39,7 @@ import { NewProjectModal } from './components/NewProjectModal';
 import { EmptyWorkspace } from './components/EmptyWorkspace';
 import { MobileDeviceWarning } from './components/MobileDeviceWarning';
 import { loadDrawingFilesAsSheets, createCroppedDrawing } from './services/pdfService';
+import { createSampleArchitecturalTiff } from './services/tiffService';
 import {
   ToolType,
   MarkupItem,
@@ -662,13 +663,34 @@ export default function App() {
       setPdfProgressPercent(100);
       setPdfProgressText('Document ready in local workspace.');
 
+      const isTiff = /\.(tiff|tif)$/i.test(file.name) || file.type === 'image/tiff';
+      const docTypeLabel = isTiff ? 'TIFF Drawing' : 'PDF';
+
       if (mode === 'replace') {
         setSheets(newSheets);
         setCurrentSheetId(newSheets[0].id);
         setSourceFileHandle(handle || null);
         setSourceFileName(file.name);
+
+        // If TIFF has DPI tag, auto-calibrate scale
+        if (newSheets[0]?.tiffMetadata?.xResolution && newSheets[0].tiffMetadata.xResolution >= 100) {
+          const dpi = newSheets[0].tiffMetadata.xResolution;
+          setPageCalibrations((prev) => ({
+            ...prev,
+            0: {
+              pageIndex: 0,
+              pixelsPerUnit: dpi / 25.4,
+              unit: 'mm',
+              scaleRatioString: `Native ${dpi} DPI (1 px = ${(25.4 / dpi).toFixed(3)} mm)`,
+              isCalibrated: true,
+              referenceLength: 25.4,
+              referencePixels: dpi,
+            },
+          }));
+        }
+
         addToast(
-          'PDF Opened',
+          `${docTypeLabel} Opened`,
           handle
             ? `Loaded ${newSheets.length} sheet${newSheets.length === 1 ? '' : 's'} from "${file.name}". Direct disk saving enabled.`
             : `Loaded ${newSheets.length} sheet${newSheets.length === 1 ? '' : 's'} from "${file.name}". Previous drawings replaced.`
@@ -698,6 +720,71 @@ export default function App() {
     }
   };
 
+  // Load Built-in High-Resolution Architectural Sample TIFF (ARCH-E 300 DPI)
+  const handleLoadSampleTiff = async () => {
+    setIsProcessingPdf(true);
+    setCurrentProcessingFileName('ARCH-E-36x24-Level02-FloorPlan.tiff');
+    setCurrentProcessingFileSizeMb('24.7');
+    setPdfProgressPercent(15);
+    setPdfProgressText('Generating 3600 × 2400 ARCH-E CAD blueprint TIFF...');
+    try {
+      const newSheets = await createSampleArchitecturalTiff((msg, pct) => {
+        setPdfProgressText(msg);
+        setPdfProgressPercent(pct);
+      });
+      setSheets(newSheets);
+      setCurrentSheetId(newSheets[0].id);
+      setSourceFileHandle(null);
+      setSourceFileName('ARCH-E-36x24-Level02-FloorPlan.tiff');
+      setProjectFileName('ARCH-E-FloorPlan.bsp');
+      const dpi = newSheets[0].tiffMetadata?.xResolution || 300;
+      setPageCalibrations((prev) => ({
+        ...prev,
+        0: {
+          pageIndex: 0,
+          pixelsPerUnit: dpi / 25.4,
+          unit: 'mm',
+          scaleRatioString: `Native ${dpi} DPI (1/8"=1'-0")`,
+          isCalibrated: true,
+          referenceLength: 25.4,
+          referencePixels: dpi,
+        },
+      }));
+      addToast(
+        'Sample Large TIFF Loaded',
+        'Opened 3600 × 2400 (ARCH-E) 300 DPI architectural blueprint with deep zoom & GeoTIFF/UTIF cache.'
+      );
+    } catch (err: any) {
+      console.error('Failed to load sample TIFF:', err);
+      addToast('Error Loading Sample TIFF', err?.message || 'Could not synthesize sample TIFF.', 'warning');
+    } finally {
+      setTimeout(() => {
+        setIsProcessingPdf(false);
+        setPdfProgressPercent(0);
+      }, 350);
+    }
+  };
+
+  // Calibrate page scale directly using TIFF embedded DPI metadata
+  const handleApplyDpiScale = (dpi: number) => {
+    setPageCalibrations((prev) => ({
+      ...prev,
+      [currentDrawingIndex]: {
+        pageIndex: currentDrawingIndex,
+        pixelsPerUnit: dpi / 25.4,
+        unit: 'mm',
+        scaleRatioString: `Calibrated ${dpi} DPI (1 px = ${(25.4 / dpi).toFixed(3)} mm)`,
+        isCalibrated: true,
+        referenceLength: 25.4,
+        referencePixels: dpi,
+      },
+    }));
+    addToast(
+      'Scale Calibrated from TIFF DPI',
+      `Calibrated to ${dpi} DPI (${(dpi / 25.4).toFixed(2)} px/mm). Architectural takeoffs ready.`
+    );
+  };
+
   const handleOpenWithNativePicker = async () => {
     const result = await pickPdfWithNativeHandle();
     if (result) {
@@ -705,7 +792,7 @@ export default function App() {
     } else if (!isFileSystemAccessSupported()) {
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = '.pdf,image/png,image/jpeg,image/webp,image/svg+xml';
+      input.accept = '.pdf,.tiff,.tif,image/tiff,image/x-tiff,image/png,image/jpeg,image/webp,image/svg+xml';
       input.onchange = (e: any) => {
         if (e.target.files && e.target.files[0]) {
           handleRequestOpenPdf(e.target.files[0]);
@@ -1630,6 +1717,7 @@ export default function App() {
         onClearAllMarkups={() => handleOpenClearMarkupsDialog('all')}
         currentSheetMarkupCount={pageMarkups.length}
         totalMarkupCount={markups.length}
+        onLoadSampleTiff={handleLoadSampleTiff}
       />
 
       {/* 2. Dynamic Mode Toolbar */}
@@ -1735,6 +1823,7 @@ export default function App() {
           <EmptyWorkspace
             onOpenPdf={handleRequestOpenPdf}
             onRestoreSamples={handleRestoreSamples}
+            onLoadSampleTiff={handleLoadSampleTiff}
           />
         ) : (
           <DrawingCanvas
@@ -1761,6 +1850,8 @@ export default function App() {
             selectedMarkupId={selectedMarkupId}
             onSelectMarkup={handleSelectMarkup}
             focusMarkupTrigger={focusMarkupTrigger}
+            onApplyDpiScale={handleApplyDpiScale}
+            onSelectSheet={(id) => setCurrentSheetId(id)}
           />
         )}
 
@@ -1859,6 +1950,7 @@ export default function App() {
         onOpenAi={() => setIsRightSidebarOpen(true)}
         onExport={handleExportPdf}
         onSave={() => handleSaveToSourceLocation(false)}
+        onLoadSampleTiff={handleLoadSampleTiff}
       />
 
       {/* Custom Stamps Modal */}
