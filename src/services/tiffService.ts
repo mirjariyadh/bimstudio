@@ -3,10 +3,49 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import * as GeoTIFF from 'geotiff';
 import UTIF from 'utif';
 import { DrawingSheetInfo, TiffMetadata, TiffGeoBoundingBox } from '../types';
 import { SampleDrawing } from './sampleDrawings';
+
+/**
+ * Safe accessor for UTIF functions supporting both ESM and CommonJS bundles.
+ */
+function getUtif(): any {
+  if (typeof (UTIF as any)?.decode === 'function') {
+    return UTIF;
+  }
+  if ((UTIF as any)?.default && typeof (UTIF as any).default.decode === 'function') {
+    return (UTIF as any).default;
+  }
+  return UTIF;
+}
+
+/**
+ * Cached GeoTIFF module reference. Dynamically imported so the app never fails
+ * at startup if GeoTIFF pre-bundling or browser environments encounter issues.
+ */
+let geoTiffModulePromise: Promise<any | null> | null = null;
+
+async function getGeoTiffModule(): Promise<any | null> {
+  if (!geoTiffModulePromise) {
+    geoTiffModulePromise = (async () => {
+      try {
+        const mod: any = await import('geotiff');
+        if (typeof mod.fromArrayBuffer === 'function') {
+          return mod;
+        }
+        if (mod.default && typeof mod.default.fromArrayBuffer === 'function') {
+          return mod.default;
+        }
+        return mod;
+      } catch (err) {
+        console.warn('GeoTIFF engine unavailable in this client runtime; defaulting to UTIF engine:', err);
+        return null;
+      }
+    })();
+  }
+  return geoTiffModulePromise;
+}
 
 /**
  * Checks whether a given file object or filename represents a TIFF / TIF file.
@@ -103,10 +142,11 @@ function decodeTiffWithUtif(
   totalPages: number,
   fileSizeBytes: number
 ): DecodedTiffPage {
-  UTIF.decodeImage(buffer, ifd);
+  const utifEngine = getUtif();
+  utifEngine.decodeImage(buffer, ifd);
   const w = ifd.width || (ifd.t256 ? ifd.t256[0] : 1400);
   const h = ifd.height || (ifd.t257 ? ifd.t257[0] : 950);
-  const rgba = UTIF.toRGBA8(ifd);
+  const rgba = utifEngine.toRGBA8(ifd);
 
   // Extract metadata tags
   const xRes = ifd.t282 ? Number(ifd.t282[0]) : undefined;
@@ -379,23 +419,27 @@ export async function loadTiffFilesAsSheets(
   // 1. Try GeoTIFF engine first (fast, tiled, BigTIFF, and GeoTIFF tags)
   let geoTiffSuccess = false;
   try {
-    const tiff = await GeoTIFF.fromArrayBuffer(arrayBuffer);
-    const count = await tiff.getImageCount();
+    const GeoTIFF = await getGeoTiffModule();
+    if (GeoTIFF && typeof GeoTIFF.fromArrayBuffer === 'function') {
+      const tiff = await GeoTIFF.fromArrayBuffer(arrayBuffer);
+      const count = await tiff.getImageCount();
 
-    if (count > 0) {
-      for (let i = 0; i < count; i++) {
-        if (onProgress) {
-          const pct = Math.round(35 + (i / count) * 45);
-          onProgress(i + 1, count, `Decoding page ${i + 1} of ${count} with GeoTIFF engine...`, pct);
+      if (count > 0) {
+        for (let i = 0; i < count; i++) {
+          if (onProgress) {
+            const pct = Math.round(35 + (i / count) * 45);
+            onProgress(i + 1, count, `Decoding page ${i + 1} of ${count} with GeoTIFF engine...`, pct);
+          }
+          const img = await tiff.getImage(i);
+          const page = await decodeTiffWithGeoTiff(tiff, img, i, count, fileSizeBytes);
+          decodedPages.push(page);
         }
-        const img = await tiff.getImage(i);
-        const page = await decodeTiffWithGeoTiff(tiff, img, i, count, fileSizeBytes);
-        decodedPages.push(page);
+        geoTiffSuccess = true;
       }
-      geoTiffSuccess = true;
     }
   } catch (geoErr) {
     console.warn('GeoTIFF engine note, falling back to UTIF decoder:', geoErr);
+    decodedPages.length = 0;
   }
 
   // 2. If GeoTIFF failed or produced 0 pages, use UTIF (handles Fax G3/G4, LZW, PackBits)
@@ -403,7 +447,8 @@ export async function loadTiffFilesAsSheets(
     if (onProgress) {
       onProgress(0, 1, 'Decoding TIFF pages with UTIF archival engine...', 45);
     }
-    const ifds = UTIF.decode(arrayBuffer);
+    const utifEngine = getUtif();
+    const ifds = utifEngine.decode(arrayBuffer);
     const count = ifds.length;
     if (count === 0) {
       throw new Error(`Unable to decode TIFF directories in "${file.name}". File format or tags may be corrupted.`);
@@ -851,7 +896,8 @@ export async function createSampleArchitecturalTiff(
   // Extract RGBA8 and encode to genuine TIFF using UTIF
   const imgData = ctx.getImageData(0, 0, w, h);
   const rgbaBytes = new Uint8Array(imgData.data.buffer, imgData.data.byteOffset, imgData.data.byteLength);
-  const tiffBuffer = UTIF.encodeImage(rgbaBytes, w, h);
+  const utifEngine = getUtif();
+  const tiffBuffer = utifEngine.encodeImage(rgbaBytes, w, h);
 
   if (onProgress) onProgress('Wrapping TIFF binary into virtual File object...', 80);
 
