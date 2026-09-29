@@ -9,17 +9,14 @@ import { MarkupItem, Point } from '../types';
 import { SampleDrawing } from './sampleDrawings';
 import { isTiffFile, loadTiffFilesAsSheets } from './tiffService';
 
-// Configure pdfjs worker if available in browser
+// Keep PDF parsing self-contained so imported drawings work without a network connection.
+const localPdfWorkerUrl = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
+
 if (typeof window !== 'undefined' && pdfjsLib.GlobalWorkerOptions) {
   try {
-    // Prefer local worker to prevent CSP / cross-origin worker blocking in sandboxed iframes
-    pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
-  } catch (e) {
-    try {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs`;
-    } catch {
-      console.warn('PDF.js worker setup note:', e);
-    }
+    pdfjsLib.GlobalWorkerOptions.workerSrc = localPdfWorkerUrl;
+  } catch (err) {
+    console.warn('PDF.js local worker setup note:', err);
   }
 }
 
@@ -38,9 +35,6 @@ export async function loadPdfFromBytes(
     const loadingTask = pdfjsLib.getDocument({
       data: bytes,
       useSystemFonts: true,
-      standardFontDataUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/standard_fonts/`,
-      cMapUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/cmaps/`,
-      cMapPacked: true,
     });
     const pdfDocProxy = await loadingTask.promise;
     return {
@@ -129,7 +123,7 @@ export async function loadDrawingFilesAsSheets(
   // Ensure worker is configured before task creation
   if (typeof window !== 'undefined' && pdfjsLib.GlobalWorkerOptions) {
     if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+      pdfjsLib.GlobalWorkerOptions.workerSrc = localPdfWorkerUrl;
     }
   }
 
@@ -138,9 +132,6 @@ export async function loadDrawingFilesAsSheets(
     const loadingTask = pdfjsLib.getDocument({
       data: bytes,
       useSystemFonts: true,
-      standardFontDataUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/standard_fonts/`,
-      cMapUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/cmaps/`,
-      cMapPacked: true,
     });
     const pdfDoc = await loadingTask.promise;
     const numPages = pdfDoc.numPages;

@@ -538,18 +538,37 @@ export async function exportPdfDocument(options: PdfExportOptions): Promise<Blob
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, renderWidth, renderHeight);
 
-    // Render drawing sheet scaled up to 300-DPI high resolution
+    // Prefer the source/full-resolution renderer so export does not reuse a
+    // downsampled viewport cache used only for fast on-screen navigation.
+    let renderedAtSourceQuality = false;
+    if (sheet.renderVector) {
+      try {
+        const rendered = await sheet.renderVector(canvas, rasterScale);
+        renderedAtSourceQuality = Boolean(rendered);
+      } catch (err) {
+        console.warn(`Full-resolution render failed for sheet ${sheet.id}:`, err);
+      }
+    }
+
+    // Fall back to the regular renderer when a source-quality renderer is unavailable.
     try {
-      ctx.save();
-      ctx.scale(rasterScale, rasterScale);
-      sheet.render(ctx, pageWidthPt, pageHeightPt);
+      if (!renderedAtSourceQuality) {
+        ctx.save();
+        ctx.scale(rasterScale, rasterScale);
+        sheet.render(ctx, pageWidthPt, pageHeightPt);
+        ctx.restore();
+      }
       if (options.mode !== 'original') {
         const pageMarkups = options.markups.filter(
           (m) => m.pageIndex === sheet.sheetInfo.pageIndex
         );
+        ctx.save();
+        if (renderedAtSourceQuality) {
+          ctx.scale(rasterScale, rasterScale);
+        }
         renderMarkupsToContext(ctx, pageMarkups, options.countCategories || []);
+        ctx.restore();
       }
-      ctx.restore();
     } catch (err) {
       console.warn(`Error rendering sheet ${sheet.id} during export:`, err);
     }

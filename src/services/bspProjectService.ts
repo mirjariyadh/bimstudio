@@ -81,7 +81,8 @@ export async function createBspProject(params: {
         if (typeof sheet.render === 'function') {
           sheet.render(ctx, w, h);
         }
-        dataUrl = offscreen.toDataURL('image/jpeg', 0.9);
+        // PNG keeps CAD linework and imported raster detail lossless across offline saves.
+        dataUrl = offscreen.toDataURL('image/png');
       }
     } catch (err) {
       console.warn(`Could not rasterize sheet ${sheet.id} for .bsp export:`, err);
