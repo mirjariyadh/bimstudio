@@ -622,7 +622,7 @@ export const Header: React.FC<HeaderProps> = ({
                     ? `Save editable project to "${projectFileName}" (Ctrl+S)`
                     : 'Save Project (.bsp) - Choose name and preserve all markups (Ctrl+S)'
                 }
-                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-l-lg transition-all cursor-pointer disabled:opacity-50"
+                className="flex h-[46px] items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-l-lg transition-all cursor-pointer disabled:opacity-50"
               >
                 {isSavingProject ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-200" />
@@ -638,7 +638,7 @@ export const Header: React.FC<HeaderProps> = ({
                 onClick={() => setShowSaveProjectMenu((prev) => !prev)}
                 disabled={isSavingProject || availableSheets.length === 0}
                 title="Save Project Options & Save As... (Click to open menu)"
-                className="flex items-center justify-center px-2 py-1.5 text-xs font-semibold bg-blue-700 hover:bg-blue-600 text-blue-100 border-l border-blue-500/40 rounded-r-lg transition-all cursor-pointer disabled:opacity-50"
+                className="flex h-[46px] items-center justify-center px-2 py-1.5 text-xs font-semibold bg-blue-700 hover:bg-blue-600 text-blue-100 border-l border-blue-500/40 rounded-r-lg transition-all cursor-pointer disabled:opacity-50"
               >
                 <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${showSaveProjectMenu ? 'rotate-180' : ''}`} />
               </button>
