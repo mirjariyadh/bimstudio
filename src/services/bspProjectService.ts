@@ -19,6 +19,25 @@ import {
 } from '../types';
 import { SampleDrawing, ALL_SAMPLE_DRAWINGS } from './sampleDrawings';
 import { downloadFile } from './exportService';
+import { loadDrawingFilesAsSheets } from './pdfService';
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index++) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
 
 /**
  * Serializes the complete BIM Studio workspace state into a `.bsp` project data object.
@@ -61,6 +80,7 @@ export async function createBspProject(params: {
 
   // Serialize each sheet into BspProjectSheetData
   const serializedSheets: BspProjectSheetData[] = [];
+  const vectorPdfSource = sheets.find((sheet) => sheet.isVectorPdf && sheet.pdfOriginalBytes);
 
   for (const sheet of sheets) {
     const sampleMatch = ALL_SAMPLE_DRAWINGS.find(
@@ -68,24 +88,25 @@ export async function createBspProject(params: {
     );
 
     let dataUrl: string | undefined;
-    try {
-      const offscreen = document.createElement('canvas');
-      const w = Math.max(sheet.width || 1400, 400);
-      const h = Math.max(sheet.height || 950, 300);
-      offscreen.width = w;
-      offscreen.height = h;
-      const ctx = offscreen.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, w, h);
-        if (typeof sheet.render === 'function') {
-          sheet.render(ctx, w, h);
+    if (!vectorPdfSource || sheet.id !== vectorPdfSource.id) {
+      try {
+        const offscreen = document.createElement('canvas');
+        const w = Math.max(sheet.width || 1400, 400);
+        const h = Math.max(sheet.height || 950, 300);
+        offscreen.width = w;
+        offscreen.height = h;
+        const ctx = offscreen.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, w, h);
+          if (typeof sheet.render === 'function') {
+            sheet.render(ctx, w, h);
+          }
+          dataUrl = offscreen.toDataURL('image/png');
         }
-        // PNG keeps CAD linework and imported raster detail lossless across offline saves.
-        dataUrl = offscreen.toDataURL('image/png');
+      } catch (err) {
+        console.warn(`Could not rasterize sheet ${sheet.id} for .bsp export:`, err);
       }
-    } catch (err) {
-      console.warn(`Could not rasterize sheet ${sheet.id} for .bsp export:`, err);
     }
 
     serializedSheets.push({
@@ -97,6 +118,10 @@ export async function createBspProject(params: {
       revisionHistory: sheet.revisionHistory ? [...sheet.revisionHistory] : undefined,
       sampleId: sampleMatch ? sampleMatch.id : undefined,
       dataUrl,
+      sourcePdfBase64:
+        vectorPdfSource && sheet.id === vectorPdfSource.id && vectorPdfSource.pdfOriginalBytes
+          ? bytesToBase64(vectorPdfSource.pdfOriginalBytes)
+          : undefined,
     });
   }
 
@@ -124,6 +149,31 @@ export async function restoreSheetsFromBsp(
   bspSheets: BspProjectSheetData[]
 ): Promise<SampleDrawing[]> {
   const restored: SampleDrawing[] = [];
+
+  const vectorSource = bspSheets.find((sheet) => sheet.sourcePdfBase64);
+  if (vectorSource?.sourcePdfBase64) {
+    try {
+      const sourceBytes = base64ToBytes(vectorSource.sourcePdfBase64);
+      const sourceFile = new File([sourceBytes], `${vectorSource.sheetInfo.projectName || 'Drawing'}.pdf`, {
+        type: 'application/pdf',
+      });
+      const vectorSheets = await loadDrawingFilesAsSheets(sourceFile);
+      if (vectorSheets.length >= bspSheets.length) {
+        return bspSheets.map((savedSheet, index) => {
+          const vectorSheet = vectorSheets[index];
+          return {
+            ...vectorSheet,
+            id: savedSheet.id,
+            sheetInfo: { ...vectorSheet.sheetInfo, ...savedSheet.sheetInfo, pageIndex: index },
+            extractedText: savedSheet.extractedText || vectorSheet.extractedText,
+            revisionHistory: savedSheet.revisionHistory || vectorSheet.revisionHistory,
+          };
+        });
+      }
+    } catch (err) {
+      console.warn('Could not restore vector PDF source from .bsp project:', err);
+    }
+  }
 
   for (let idx = 0; idx < bspSheets.length; idx++) {
     const s = bspSheets[idx];

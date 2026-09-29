@@ -296,6 +296,7 @@ export interface BspProjectSheetData {
   revisionHistory?: RevisionHistoryItem[];
   sampleId?: string;
   dataUrl?: string;
+  sourcePdfBase64?: string;
 }
 
 export interface BspProjectFile {

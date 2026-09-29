@@ -500,9 +500,8 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         }
       }
       lastRenderedDrawingIdRef.current = currentDrawing.id;
-      lastRenderedScaleRef.current = 1.0;
-      setVectorFidelityStatus('crisp');
-      return; // Do NOT launch immediate vector re-render on open! The sheet is already rendered!
+      // Keep the preview visible while the source-quality renderer upgrades it below.
+      lastRenderedScaleRef.current = 0;
     }
 
     // Cancel any previous vector render task
@@ -518,11 +517,11 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
     const targetScale = Math.min(2.5, Math.max(1.0, zoom * dpr));
 
-    // If this drawing has direct vector rendering (PDF vector linework)
-    // Only upgrade vector fidelity if user is zoomed in deeply (zoom >= 1.4) AND scale changed significantly (>25%)
-    if (typeof currentDrawing.renderVector === 'function' && zoom >= 1.4) {
+    // If this drawing has direct vector rendering (PDF vector linework), render it
+    // on initial load and refresh it as zoom changes instead of scaling a preview.
+    if (typeof currentDrawing.renderVector === 'function') {
       const scaleDiff = Math.abs(targetScale - lastRenderedScaleRef.current) / (lastRenderedScaleRef.current || 1);
-      if (scaleDiff > 0.25) {
+      if (scaleDiff > 0.08) {
         setVectorFidelityStatus('rendering');
         const timeoutId = setTimeout(() => {
           if (!baseCanvasRef.current || currentDrawing.id !== lastRenderedDrawingIdRef.current) {
@@ -545,7 +544,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
               }
               setVectorFidelityStatus('crisp');
             });
-        }, 450); // 450ms debounce ensures smooth navigation without repeated render interruptions
+        }, 150); // Short debounce keeps zoom responsive without rendering every wheel event.
 
         return () => {
           clearTimeout(timeoutId);
