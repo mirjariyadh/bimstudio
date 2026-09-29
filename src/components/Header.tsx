@@ -214,11 +214,11 @@ export const Header: React.FC<HeaderProps> = ({
               id="file-menu-dropdown-button"
               onClick={() => setShowFileMenu((prev) => !prev)}
               title="File & Project Operations"
-              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-700 rounded-lg transition-colors cursor-pointer"
+              className="flex h-[46px] min-w-[96px] items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-700 rounded-lg transition-colors cursor-pointer"
             >
-              <FolderKanban className="w-3.5 h-3.5 text-blue-400" />
+              <FolderKanban className="w-4 h-4 text-blue-400" />
               <span>File</span>
-              <ChevronDown className="w-3 h-3 text-slate-400" />
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
             </button>
 
             {showFileMenu && (
