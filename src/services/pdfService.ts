@@ -12,10 +12,14 @@ import { isTiffFile, loadTiffFilesAsSheets } from './tiffService';
 // Configure pdfjs worker if available in browser
 if (typeof window !== 'undefined' && pdfjsLib.GlobalWorkerOptions) {
   try {
-    // 4.10.38 is the stable production release with widespread browser and worker support
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs`;
+    // Prefer local worker to prevent CSP / cross-origin worker blocking in sandboxed iframes
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
   } catch (e) {
-    console.warn('PDF.js worker setup note:', e);
+    try {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs`;
+    } catch {
+      console.warn('PDF.js worker setup note:', e);
+    }
   }
 }
 
@@ -124,10 +128,8 @@ export async function loadDrawingFilesAsSheets(
 
   // Ensure worker is configured before task creation
   if (typeof window !== 'undefined' && pdfjsLib.GlobalWorkerOptions) {
-    try {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs`;
-    } catch {
-      // ignore
+    if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
     }
   }
 
