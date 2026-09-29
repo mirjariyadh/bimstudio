@@ -119,6 +119,9 @@ export async function loadDrawingFilesAsSheets(
   if (onProgress) onProgress(0, 1, 'Reading PDF file into local memory...', 10);
   const arrayBuffer = await file.arrayBuffer();
   const bytes = new Uint8Array(arrayBuffer);
+  // PDF.js may transfer its input buffer to a worker. Keep an untouched copy
+  // for later vector-preserving export.
+  const sourcePdfBytes = new Uint8Array(bytes);
 
   // Ensure worker is configured before task creation
   if (typeof window !== 'undefined' && pdfjsLib.GlobalWorkerOptions) {
@@ -295,7 +298,7 @@ export async function loadDrawingFilesAsSheets(
         height: sheetHeight,
         originalWidth: sheetWidth,
         originalHeight: sheetHeight,
-        pdfOriginalBytes: bytes,
+        pdfOriginalBytes: sourcePdfBytes,
         extractedText: extractedText || `Page ${p} of ${file.name}`,
         isVectorPdf: true,
         pdfDocProxy: pdfDoc,

@@ -449,7 +449,7 @@ export async function exportPdfDocument(options: PdfExportOptions): Promise<Blob
     options.onProgress?.(idx + 1, sheetsToExport.length);
 
     // 1. Native Vector PDF Export with CropBox & MediaBox preservation
-    if (sheet.isVectorPdf && sheet.pdfOriginalBytes) {
+    if (sheet.pdfOriginalBytes && (sheet.isVectorPdf || sheet.pdfPageNumber)) {
       try {
         const srcDoc = await PDFDocument.load(sheet.pdfOriginalBytes);
         const pageIdx = sheet.pdfPageNumber ? Math.max(0, sheet.pdfPageNumber - 1) : 0;
