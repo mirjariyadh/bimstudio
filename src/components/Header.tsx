@@ -940,7 +940,7 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 shadow-inner">
         <button
           onClick={() => onSelectWorkspaceMode('standard')}
-          className={`flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg transition-all ${
+          className={`flex h-8 items-center gap-1.5 px-3 text-xs font-semibold rounded-lg transition-all ${
             workspaceMode === 'standard'
               ? 'bg-slate-800 text-white shadow-sm ring-1 ring-slate-700'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
@@ -953,7 +953,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         <button
           onClick={() => onSelectWorkspaceMode('drawing')}
-          className={`flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg transition-all ${
+          className={`flex h-8 items-center gap-1.5 px-3 text-xs font-semibold rounded-lg transition-all ${
             workspaceMode === 'drawing'
               ? 'bg-blue-600 text-white shadow-sm ring-1 ring-blue-500'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
@@ -966,7 +966,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         <button
           onClick={() => onSelectWorkspaceMode('edit_pdf')}
-          className={`flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg transition-all ${
+          className={`flex h-8 items-center gap-1.5 px-3 text-xs font-semibold rounded-lg transition-all ${
             workspaceMode === 'edit_pdf'
               ? 'bg-indigo-600 text-white shadow-sm ring-1 ring-indigo-500'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
