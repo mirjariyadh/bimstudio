@@ -202,9 +202,9 @@ export async function loadDrawingFilesAsSheets(
         targetScale: number,
         onTaskCreated?: (task: any) => void
       ): Promise<{ width: number; height: number } | null> => {
-        // Clamp scale to safe bounds: max 2800px on either dimension so rendering is ultra-fast
+        // Preserve PDF detail at high zoom while respecting browser canvas dimensions.
         const maxDim = Math.max(sheetWidth, sheetHeight);
-        const maxAllowedScale = Math.max(1.0, 2800 / maxDim);
+        const maxAllowedScale = Math.max(1.0, Math.min(16, 16384 / maxDim));
         const effectiveScale = Math.min(Math.max(0.75, targetScale), maxAllowedScale);
 
         const renderViewport = page.getViewport({ scale: baseScale * effectiveScale });
@@ -561,7 +561,9 @@ export function createCroppedDrawing(
       onTaskCreated?: (task: any) => void
     ): Promise<{ width: number; height: number } | null> => {
       try {
-        const effectiveScale = Math.min(2.5, Math.max(1.0, targetScale));
+        const maxDim = Math.max(rootW, rootH);
+        const maxAllowedScale = Math.max(1.0, Math.min(16, 16384 / maxDim));
+        const effectiveScale = Math.min(Math.max(1.0, targetScale), maxAllowedScale);
         const viewport = page.getViewport({ scale: baseScale * effectiveScale });
         const pageW = Math.round(viewport.width);
         const pageH = Math.round(viewport.height);

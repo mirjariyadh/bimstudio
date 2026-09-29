@@ -515,7 +515,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     }
 
     const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-    const targetScale = Math.min(2.5, Math.max(1.0, zoom * dpr));
+    const targetScale = Math.max(1.0, zoom * dpr);
 
     // If this drawing has direct vector rendering (PDF vector linework), render it
     // on initial load and refresh it as zoom changes instead of scaling a preview.
@@ -2036,7 +2036,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         : 0.85;
 
       const minZ = getMinZoom();
-      const maxZ = 16;
+      const maxZ = 500;
       setZoom((prevZoom) => {
         const nextZoom = Math.min(maxZ, Math.max(minZ, prevZoom * zoomFactor));
         const rect = container.getBoundingClientRect();
@@ -2556,7 +2556,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
               {Math.round(zoom * 100)}%
             </button>
             <button
-              onClick={() => setZoom((z) => Math.min(16, z * 1.25))}
+              onClick={() => setZoom((z) => Math.min(500, z * 1.25))}
               className="p-1 hover:bg-slate-800 text-slate-300 rounded"
               title="Zoom In"
             >
